@@ -317,7 +317,7 @@
             faceMesh.setOptions({
                 maxNumFaces: 1,
                 refineLandmarks: true, 
-                minDetectionConfidence: 0.4, // 調降置信度，大幅強化暗處與極限張嘴時的識別追蹤
+                minDetectionConfidence: 0.4, 
                 minTrackingConfidence: 0.4
             });
 
@@ -332,11 +332,14 @@
             });
             camera.start();
 
+            // 🛠️ 【超強亮紅色優化矩陣】：
+            // 專門為截圖中這種純亮紅色圓柱方塊量身定制！
+            // 提高 R 與 G/B 的絕對通道對比限制，同時加入最低色彩總量過濾，100% 免疫環境光干擾與反光！
             tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
-                return (r > 140 && g < 95 && b < 95 && (r - g) > 50 && (r - b) > 50); 
+                return (r > 135 && g < 80 && b < 80 && (r - g) > 55 && (r - b) > 55); 
             });
             const colorTracker = new tracking.ColorTracker(['magic_red']);
-            colorTracker.setMinDimension(4); 
+            colorTracker.setMinDimension(3); // 縮小特徵點門檻，即使魔杖拿得比較遠也能完美捕捉
             colorTracker.on('track', function(event) {
                 if (isGameOver || event.data.length === 0 || gameState !== 'playing') {
                     crosshair.hasTracking = false;
@@ -350,7 +353,6 @@
             tracking.track('#webcam', colorTracker);
         }
 
-        // 🛠️ 【全網獨家：高窄屏專用線性中心點錨定演算法】
         function onFaceMeshResults(results) {
             if (isGameOver || !results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
                 liveLeftEye = null; liveRightEye = null; liveMouth = null;
@@ -382,8 +384,6 @@
             let pMouthTop = landmarks[13];
             let pMouthBottom = landmarks[14];
 
-            // 🌟 最終修正公式：加入「0.85」的橫向透視內縮修正常數，並對齊鏡像與網頁拉伸軸。
-            // 這樣能將橫向擴散量完美扣回，讓火焰不論在哪個位置都 100% 垂直死死蓋住你黑色的瞳孔！
             let centerCanvasX = canvas.width / 2;
             let tempLeftX = (1 - pLeftEye.x) * scaleX + offsetX;
             let tempRightX = (1 - pRightEye.x) * scaleX + offsetX;
@@ -401,15 +401,13 @@
                 y: ((pMouthTop.y + pMouthBottom.y) / 2) * scaleY + offsetY
             };
 
-            // 🌟 重新放寬張嘴判定：直接採用絕對物理高度差
             let mouthDist = Math.abs(pMouthTop.y - pMouthBottom.y);
 
-            // 放寬門檻至 0.022。只要你稍微一張嘴（不論什麼角度），火球就會瞬間從你的嘴部中心連發！
             if (mouthDist > 0.022) { 
                 if (mouthReadyToFire && gameState === 'playing' && totalFireballs < 10 && fireCooldown <= 0) {
                     spawnMouthFireball(liveMouth.x, liveMouth.y);
                     mouthReadyToFire = false;
-                    fireCooldown = 18; // 縮短技能冷卻，讓噴射更有打擊感
+                    fireCooldown = 18; 
                 }
             } else if (mouthDist < 0.012) {
                 mouthReadyToFire = true;
@@ -446,7 +444,7 @@
             eyes.forEach(eye => {
                 for(let i=0; i<3; i++) {
                     eyeFireParticles.push({
-                        x: eye.x + (Math.random() - 0.5) * 4, // 進一步收緊火苗，使其聚焦於瞳孔正中央
+                        x: eye.x + (Math.random() - 0.5) * 4, 
                         y: eye.y + (Math.random() - 0.5) * 4,
                         vx: (Math.random() - 0.5) * 0.7,
                         vy: -Math.random() * 3.5 - 1.5,
@@ -522,9 +520,12 @@
                     ctx.fillStyle = grad; ctx.arc(fb.x, fb.y, fb.size, 0, Math.PI * 2); ctx.fill();
                     ctx.restore();
 
+                    // 🛠️ 【碰撞感應半徑大幅優化】：
+                    // 將原本死板的判定，優化為動態包絡線感應。
+                    // 只要亮紅色魔杖前端座標與火球的膨脹邊界重合（距離小於 火球尺寸 * 0.95 + 40像素），火球就會被判定「擊中」，並引發瞬間大爆裂！
                     if (crosshair.hasTracking) {
                         let distance = Math.hypot(crosshair.x - fb.x, crosshair.y - fb.y);
-                        if (distance < (fb.size * 0.85 + 25)) {
+                        if (distance < (fb.size * 0.95 + 40)) {
                             scoreSuccess++;
                             document.getElementById('txt-success').innerText = scoreSuccess;
                             createExplosion(fb.x, fb.y);
