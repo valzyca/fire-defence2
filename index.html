@@ -165,6 +165,34 @@
         }, { passive: false });
         startScreen.addEventListener('touchmove', handleTouchMove, { passive: false });
 
+        // 🛠️ 【新增雙重保險機制】：當實體魔杖觸碰螢幕時，同步計算火球爆裂
+        window.addEventListener('touchstart', handleDirectScreenTouch, { passive: false });
+        window.addEventListener('mousedown', handleDirectScreenTouch);
+
+        function handleDirectScreenTouch(e) {
+            if (!gameStarted || isGameOver || gameState !== 'playing') return;
+            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            manuallyPopFireballAt(clientX, clientY);
+        }
+
+        function manuallyPopFireballAt(tx, ty) {
+            for (let i = fireballs.length - 1; i >= 0; i--) {
+                let fb = fireballs[i];
+                if (!fb.active) continue;
+                let distance = Math.hypot(tx - fb.x, ty - fb.y);
+                if (distance < (fb.size + 55)) { // 觸控判定範圍加寬
+                    scoreSuccess++;
+                    document.getElementById('txt-success').innerText = scoreSuccess;
+                    createExplosion(fb.x, fb.y);
+                    fb.active = false;
+                    checkGameCompletion();
+                    break;
+                }
+            }
+        }
+
         function updateStartScreen() {
             if (gameStarted && gameState === 'playing') return;
             if (startCanvas.width !== window.innerWidth || startCanvas.height !== window.innerHeight) resizeCanvases();
@@ -332,14 +360,15 @@
             });
             camera.start();
 
-            // 🛠️ 【超強亮紅色優化矩陣】：
-            // 專門為截圖中這種純亮紅色圓柱方塊量身定制！
-            // 提高 R 與 G/B 的絕對通道對比限制，同時加入最低色彩總量過濾，100% 免疫環境光干擾與反光！
+            // 🛠️ 【革命級動態色差判定庫】：
+            // 完全摒棄死板的絕對上限，改用動態通道比值：R 必須大於 110，且 R 必須比 G、B 兩者都高出 40 以上。
+            // 這能完美識別在火球強烈黃光、亮面反光折射下的朱紅色魔杖尖端！
             tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
-                return (r > 135 && g < 80 && b < 80 && (r - g) > 55 && (r - b) > 55); 
+                let isBrightRed = (r > 110 && (r - g) > 40 && (r - b) > 40);
+                return isBrightRed;
             });
             const colorTracker = new tracking.ColorTracker(['magic_red']);
-            colorTracker.setMinDimension(3); // 縮小特徵點門檻，即使魔杖拿得比較遠也能完美捕捉
+            colorTracker.setMinDimension(2); // 特徵點門檻降至極限 2 像素，反光碎影也能無縫抓取
             colorTracker.on('track', function(event) {
                 if (isGameOver || event.data.length === 0 || gameState !== 'playing') {
                     crosshair.hasTracking = false;
@@ -520,12 +549,10 @@
                     ctx.fillStyle = grad; ctx.arc(fb.x, fb.y, fb.size, 0, Math.PI * 2); ctx.fill();
                     ctx.restore();
 
-                    // 🛠️ 【碰撞感應半徑大幅優化】：
-                    // 將原本死板的判定，優化為動態包絡線感應。
-                    // 只要亮紅色魔杖前端座標與火球的膨脹邊界重合（距離小於 火球尺寸 * 0.95 + 40像素），火球就會被判定「擊中」，並引發瞬間大爆裂！
+                    // 鏡頭色彩準星碰撞判定
                     if (crosshair.hasTracking) {
                         let distance = Math.hypot(crosshair.x - fb.x, crosshair.y - fb.y);
-                        if (distance < (fb.size * 0.95 + 40)) {
+                        if (distance < (fb.size * 0.95 + 45)) {
                             scoreSuccess++;
                             document.getElementById('txt-success').innerText = scoreSuccess;
                             createExplosion(fb.x, fb.y);
