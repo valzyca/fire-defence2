@@ -165,7 +165,7 @@
         }, { passive: false });
         startScreen.addEventListener('touchmove', handleTouchMove, { passive: false });
 
-        // 雙重保險機制觸控直接引爆
+        // 保險屏幕點擊引爆
         window.addEventListener('touchstart', handleDirectScreenTouch, { passive: false });
         window.addEventListener('mousedown', handleDirectScreenTouch);
 
@@ -181,7 +181,7 @@
                 let fb = fireballs[i];
                 if (!fb.active) continue;
                 let distance = Math.hypot(tx - fb.x, ty - fb.y);
-                if (distance < (fb.size + 60)) { 
+                if (distance < (fb.size + 70)) { 
                     scoreSuccess++;
                     document.getElementById('txt-success').innerText = scoreSuccess;
                     createExplosion(fb.x, fb.y);
@@ -325,7 +325,6 @@
                     document.getElementById('scoreboard').style.display = 'block';
                     document.getElementById('ritual-title').innerText = "特訓進行中：真·實時人臉面具";
                     document.getElementById('ritual-title').style.color = "#ff4500";
-                    // UI 指示同步調整為藍色魔杖
                     document.getElementById('ritual-desc').innerHTML = '任意移動並張嘴發射火球，揮動<span style="color:#00d2ff;font-weight:bold;">藍色魔杖</span>將其點破！';
                     gameState = 'playing';
                     gameStarted = true;
@@ -360,11 +359,9 @@
             });
             camera.start();
 
-            // 🛠️ 【全新置換：高動態藍色感應色矩陣】
-            // 針對寶藍色前端特製：B 通道必須大於 130，且 B 通道必須顯著大於 R、G 達 45 像素以上。
-            // 這能完美反切火球投射在亮面上的暖色炫光，達到零誤判的極致追蹤！
+            // 高靈敏藍色判定矩陣
             tracking.ColorTracker.registerColor('magic_blue', function(r, g, b) {
-                let isPureBlue = (b > 130 && (b - r) > 45 && (b - g) > 15);
+                let isPureBlue = (b > 125 && (b - r) > 40 && (b - g) > 12);
                 return isPureBlue;
             });
             const colorTracker = new tracking.ColorTracker(['magic_blue']);
@@ -376,7 +373,22 @@
                 }
                 let validTarget = event.data[0];
                 crosshair.hasTracking = true;
-                crosshair.targetX = canvas.width - (validTarget.x + validTarget.width / 2) * (canvas.width / 640);
+                
+                // 🛠️ 【修正魔杖幾何位移軸心】：
+                // 逆向還原直立黑邊比例（與人臉幾何對齊相同），修正因為 offsetX 脫節引起的橫向偏置誤差！
+                let videoRatio = 640 / 480;
+                let canvasRatio = canvas.width / canvas.height;
+                let scaleX = 1, offsetX = 0;
+
+                if (canvasRatio > videoRatio) {
+                    scaleX = canvas.width;
+                } else {
+                    scaleX = canvas.height * videoRatio;
+                    offsetX = (canvas.width - scaleX) / 2;
+                }
+
+                // 配合鏡射運算，使準星核心點完美咬合實體藍色圓柱中心
+                crosshair.targetX = offsetX + (1 - (validTarget.x + validTarget.width / 2) / 640) * scaleX;
                 crosshair.targetY = (validTarget.y + validTarget.height / 2) * (canvas.height / 480);
             });
             tracking.track('#webcam', colorTracker);
@@ -483,7 +495,6 @@
             });
         }
 
-        // 追蹤圈微調為炫酷的冰藍色魔法陣
         function drawMagicCrosshair(x, y) {
             crosshair.rotation += 0.04;
             ctx.save(); ctx.translate(x, y); ctx.rotate(crosshair.rotation);
@@ -550,10 +561,11 @@
                     ctx.fillStyle = grad; ctx.arc(fb.x, fb.y, fb.size, 0, Math.PI * 2); ctx.fill();
                     ctx.restore();
 
-                    // 藍色科技準星追蹤判定
+                    // 🛠️ 【實作：擦邊即爆演算法（極簡輕觸重合）】：
+                    // 將判定跨度大幅拓寬。現在不需要中心點完全重合，只要魔杖準星邊緣稍微蹭到火球（距離小於 火球半徑 + 72像素），就會當場觸發微粒大爆炸！
                     if (crosshair.hasTracking) {
                         let distance = Math.hypot(crosshair.x - fb.x, crosshair.y - fb.y);
-                        if (distance < (fb.size * 0.95 + 45)) {
+                        if (distance < (fb.size + 72)) {
                             scoreSuccess++;
                             document.getElementById('txt-success').innerText = scoreSuccess;
                             createExplosion(fb.x, fb.y);
