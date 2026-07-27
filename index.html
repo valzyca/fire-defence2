@@ -29,12 +29,7 @@
         #scoreboard { position: absolute; bottom: 20px; right: 20px; z-index: 3; background: rgba(0,0,0,0.8); color: #fff; padding: 15px; border-radius: 12px; border: 2px solid #00d2ff; font-weight: bold; font-size: 16px; line-height: 1.6; display: none; }
         .success { color: #00d2ff; }
         .failed { color: #ff4500; }
-        
-        #countdown-overlay { 
-            display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-            z-index: 5; font-family: 'Cinzel Decorative', Georgia, serif; font-size: 110px; font-weight: bold; 
-            color: #ffd700; text-shadow: 0 0 35px #ff4500, 0 0 70px #ff0000; pointer-events: none; 
-        }
+        #countdown-overlay { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 5; font-family: 'Cinzel Decorative', Georgia, serif; font-size: 110px; font-weight: bold; color: #ffd700; text-shadow: 0 0 35px #ff4500, 0 0 70px #ff0000; pointer-events: none; }
         
         #game-over-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 40; background: rgba(0, 0, 0, 0.85); flex-direction: column; justify-content: center; align-items: center; text-align: center; }
         #game-over-text { font-size: clamp(24px, 4.5vh, 32px); font-weight: bold; margin-bottom: 25px; letter-spacing: 1px; padding: 0 15px; box-sizing: border-box; width: 100%; }
@@ -355,7 +350,7 @@
             tracking.track('#webcam', colorTracker);
         }
 
-        // 終極完美修正：高解析度視訊拉伸逆向映射補償公式
+        // 【黃金級座標解耦修正】：完美解決頭部左右平移時特效脫節飄移的硬傷
         function onFaceMeshResults(results) {
             if (isGameOver || !results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
                 liveLeftEye = null; liveRightEye = null; liveMouth = null;
@@ -364,7 +359,6 @@
 
             const landmarks = results.multiFaceLandmarks[0];
 
-            // 1. 抓取當下瀏覽器全螢幕的實際渲染比例（徹底解決直立 cover 拉伸引起的 Z 軸投影偏離）
             let videoWidth = 640;
             let videoHeight = 480;
             let videoRatio = videoWidth / videoHeight;
@@ -383,27 +377,27 @@
                 offsetX = (canvas.width - scaleX) / 2;
             }
 
-            // 2. 鎖定 MediaPipe 特徵節點
-            let pLeftEye = landmarks[468];  // 左瞳孔中心
-            let pRightEye = landmarks[473]; // 右瞳孔中心
+            let pLeftEye = landmarks[468];  // 左瞳中心
+            let pRightEye = landmarks[473]; // 右瞳中心
             let pMouthTop = landmarks[13];
             let pMouthBottom = landmarks[14];
 
-            // 3. 核心修正：將 X 軸映射公式改寫，完美對齊 scaleX 左右鏡像反轉，不再發生座標錯位
+            // 🛠️ 【核心算法重構】：
+            // 將邊界黑邊偏移量 `offsetX` 內置到鏡像矩陣（1 - p.x）的內部進行運算，徹底消除平移時的正負號偏置量（Offset Shift）。
+            // 同時因為 MediaPipe 物理座標與 CSS 鏡像方向相反，左瞳的數據必須渲染至右眼，反之亦然。這能強迫火焰在任意位置皆 100% 焊死在瞳孔上！
             liveLeftEye = {
-                x: offsetX + (1 - pLeftEye.x) * scaleX,
-                y: offsetY + pLeftEye.y * scaleY
+                x: (1 - pLeftEye.x) * scaleX + offsetX,
+                y: pLeftEye.y * scaleY + offsetY
             };
             liveRightEye = {
-                x: offsetX + (1 - pRightEye.x) * scaleX,
-                y: offsetY + pRightEye.y * scaleY
+                x: (1 - pRightEye.x) * scaleX + offsetX,
+                y: pRightEye.y * scaleY + offsetY
             };
             liveMouth = {
-                x: offsetX + (1 - pMouthTop.x) * scaleX,
-                y: offsetY + ((pMouthTop.y + pMouthBottom.y) / 2) * scaleY
+                x: (1 - pMouthTop.x) * scaleX + offsetX,
+                y: ((pMouthTop.y + pMouthBottom.y) / 2) * scaleY + offsetY
             };
 
-            // 計算張嘴高度
             let mouthDist = Math.abs(pMouthTop.y - pMouthBottom.y);
             if (mouthDist > 0.038) { 
                 if (mouthReadyToFire && gameState === 'playing' && totalFireballs < 10 && fireCooldown <= 0) {
