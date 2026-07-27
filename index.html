@@ -11,9 +11,6 @@
     
     <!-- 引入極度穩定的標準顏色追蹤庫 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tracking.js/1.1.3/tracking-min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tracking.js/1.1.3/data/face-min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tracking.js/1.1.3/data/eye-min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tracking.js/1.1.3/data/mouth-min.js"></script>
 
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'PingFang TC', sans-serif; }
@@ -67,6 +64,9 @@
         <div id="restart-hint">點擊畫面重新挑戰</div>
     </div>
 
+    <!-- 用於背景像素比對的隱藏畫布 -->
+    <canvas id="blend-canvas" width="80" height="60" style="display:none;"></canvas>
+
     <script>
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('game-canvas');
@@ -76,6 +76,9 @@
         const startCtx = startCanvas.getContext('2d');
         const gameOverScreen = document.getElementById('game-over-screen');
         const countdownOverlay = document.getElementById('countdown-overlay');
+        
+        const blendCanvas = document.getElementById('blend-canvas');
+        const blendCtx = blendCanvas.getContext('2d');
 
         let gameStarted = false;
         let scoreSuccess = 0;
@@ -105,8 +108,10 @@
         let nextRequiredPoint = 0; 
         let wandTrail = []; 
 
-        let faceFeatures = { leftEye: null, rightEye: null, mouthPos: null, lastMouthHeight: 0 };
+        // 物理追蹤參數快取
+        let lastFrameData = null;
         let mouthReadyToFire = true;
+        let fireCooldown = 0;
 
         function resizeCanvases() {
             canvas.width = window.innerWidth;
@@ -232,7 +237,7 @@
                     } else if (isCurrent) {
                         let breath = Math.sin(Date.now() * 0.008) * 2;
                         startCtx.fillStyle = '#0077ff'; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 11 + breath, 0, Math.PI * 2); startCtx.fill();
-                        startCtx.strokeStyle = '#ffffff'; startCtx.lineWidth = 1.5; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 14 + breath, 0, Math.PI * 2); startCtx.stroke();
+                        startCtx.strokeStyle = '#ffffff'; startCtx.lineWidth = 1.5; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 14 + breath, 0, Math.PI * 2); stroke();
                     } else {
                         startCtx.fillStyle = 'rgba(0, 119, 255, 0.3)'; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 8, 0, Math.PI * 2); startCtx.fill();
                     }
@@ -276,9 +281,9 @@
         function triggerCountdown() {
             gameState = 'countdown';
             countdownOverlay.style.display = 'block';
-            document.getElementById('ritual-title').innerText = "深呼吸準備：喚醒眼眸聖火";
+            document.getElementById('ritual-title').innerText = "深呼吸準備：對齊法陣中心";
             document.getElementById('ritual-title').style.color = "#ffd700";
-            document.getElementById('ritual-desc').innerText = "張開嘴巴即可緩慢吐出火球，揮動魔杖點破它們！";
+            document.getElementById('ritual-desc').innerText = "將嘴巴對準畫面中央的綠色引導法陣，張嘴即可噴射火球！";
             
             initTrackingModules();
 
@@ -290,9 +295,9 @@
                     clearInterval(timer);
                     countdownOverlay.style.display = 'none';
                     document.getElementById('scoreboard').style.display = 'block';
-                    document.getElementById('ritual-title').innerText = "特訓進行中：吐納火球防禦線";
+                    document.getElementById('ritual-title').innerText = "特訓進行中：光能動態感應";
                     document.getElementById('ritual-title').style.color = "#ff4500";
-                    document.getElementById('ritual-desc').innerHTML = '張嘴射出火球，揮動<span style="color:#ff3333;font-weight:bold;">紅色魔杖</span>精準將其點破！';
+                    document.getElementById('ritual-desc').innerHTML = '正對綠圈張嘴射出火球，揮動<span style="color:#ff3333;font-weight:bold;">紅色魔杖</span>精準點破！';
                     gameState = 'playing';
                     gameStarted = true;
                 }
@@ -306,7 +311,7 @@
 
             const videoConstraints = {
                 audio: false,
-                video: { facingMode: "user", width: 320, height: 240 }
+                video: { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 } }
             };
 
             navigator.mediaDevices.getUserMedia(videoConstraints).then(function(stream) {
@@ -314,9 +319,9 @@
                 video.play();
             });
 
-            // 1. 魔杖紅色追蹤
+            // 魔杖紅色光點色彩追蹤
             tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
-                return (r > 150 && g < 65 && b < 65); 
+                return (r > 155 && g < 65 && b < 65); 
             });
             const colorTracker = new tracking.ColorTracker(['magic_red']);
             colorTracker.setMinDimension(5);
@@ -327,80 +332,19 @@
                 }
                 let validTarget = event.data[0];
                 crosshair.hasTracking = true;
-                crosshair.targetX = canvas.width - (validTarget.x + validTarget.width / 2) * (canvas.width / 320);
-                crosshair.targetY = (validTarget.y + validTarget.height / 2) * (canvas.height / 240);
+                crosshair.targetX = canvas.width - (validTarget.x + validTarget.width / 2) * (canvas.width / video.videoWidth);
+                crosshair.targetY = (validTarget.y + validTarget.height / 2) * (canvas.height / video.videoHeight);
             });
             tracking.track('#webcam', colorTracker);
-
-            // 2. 整合式人臉與五官追蹤器（100% 穩定無外部 CDN 阻擋）
-            const objectsTracker = new tracking.ObjectTracker(['face', 'eye', 'mouth']);
-            objectsTracker.setInitialScale(4);
-            objectsTracker.setStepSize(2);
-            objectsTracker.setEdgesDensity(0.1);
-
-            objectsTracker.on('track', function(event) {
-                if (isGameOver || gameState !== 'playing') return;
-
-                let faceRect = null;
-                let detectedEyes = [];
-                let detectedMouths = [];
-
-                event.data.forEach(rect => {
-                    if (rect.color === 'face' || !rect.color) { // 部分相容處理
-                        if (!faceRect || rect.width > faceRect.width) faceRect = rect;
-                    }
-                    if (rect.color === 'eye') detectedEyes.push(rect);
-                    if (rect.color === 'mouth') detectedMouths.push(rect);
-                });
-
-                // 備用處理：若類別未完全分離，依空間幾何比例進行強制修正分配
-                if (!faceRect && event.data.length > 0) {
-                    event.data.forEach(rect => { if (!faceRect || rect.width > faceRect.width) faceRect = rect; });
-                }
-
-                if (faceRect) {
-                    let scaleX = canvas.width / 320;
-                    let scaleY = canvas.height / 240;
-
-                    // 依據人臉中心幾何結構估算雙眼與嘴巴位置（當子特徵被遮擋時的完美物理保險機制）
-                    let estimatedLeftEyeX = canvas.width - (faceRect.x + faceRect.width * 0.3) * scaleX;
-                    let estimatedRightEyeX = canvas.width - (faceRect.x + faceRect.width * 0.7) * scaleX;
-                    let estimatedEyeY = (faceRect.y + faceRect.height * 0.35) * scaleY;
-                    
-                    faceFeatures.leftEye = { x: estimatedLeftEyeX, y: estimatedEyeY };
-                    faceFeatures.rightEye = { x: estimatedRightEyeX, y: estimatedEyeY };
-                    
-                    faceFeatures.mouthPos = {
-                        x: canvas.width - (faceRect.x + faceRect.width * 0.5) * scaleX,
-                        y: (faceRect.y + faceRect.height * 0.75) * scaleY
-                    };
-
-                    // 精確張嘴比對邏輯：使用實時高度動態判定
-                    let currentMouth = detectedMouths[0] || faceRect;
-                    let mouthHeight = currentMouth.height;
-
-                    // 當檢測到嘴部高度突然拉長，即觸發張嘴吐火球
-                    if (mouthHeight > faceRect.height * 0.18) {
-                        if (mouthReadyToFire && totalFireballs < 10) {
-                            spawnMouthFireball(faceFeatures.mouthPos.x, faceFeatures.mouthPos.y);
-                            mouthReadyToFire = false;
-                        }
-                    } else {
-                        mouthReadyToFire = true;
-                    }
-                }
-            });
-
-            tracking.track('#webcam', objectsTracker);
         }
 
         function spawnMouthFireball(startX, startY) {
             totalFireballs++;
             document.getElementById('txt-total').innerText = totalFireballs;
 
-            let angle = -Math.PI/2 + (Math.random() - 0.5) * 1.0; 
+            let angle = -Math.PI/2 + (Math.random() - 0.5) * 0.8; 
             fireballs.push({
-                x: startX, y: startY, size: 12,
+                x: startX, y: startY, size: 14,
                 speedX: Math.cos(angle) * 1.6,
                 speedY: Math.sin(angle) * 1.6,
                 active: true
@@ -417,17 +361,22 @@
             }
         }
 
-        function handleEyeFire(eye) {
-            if (!eye) return;
-            for(let i=0; i<3; i++) {
-                eyeFireParticles.push({
-                    x: eye.x + (Math.random() - 0.5) * 14,
-                    y: eye.y + (Math.random() - 0.5) * 8,
-                    vx: (Math.random() - 0.5) * 1.5,
-                    vy: -Math.random() * 3.5 - 1.5,
-                    life: 25, maxLife: 25,
-                    size: Math.random() * 14 + 6
-                });
+        // 渲染眼部酷炫跟隨火焰（依據引導框做相對位置渲染，免除眼鏡干擾阻斷）
+        function drawGlowEyes(centerX, centerY) {
+            let leftEye = { x: centerX - 45, y: centerY - 55 };
+            let rightEye = { x: centerX + 45, y: centerY - 55 };
+
+            for(let k=0; k<2; k++) {
+                let target = k === 0 ? leftEye : rightEye;
+                for(let i=0; i<2; i++) {
+                    eyeFireParticles.push({
+                        x: target.x + (Math.random() - 0.5) * 10,
+                        y: target.y + (Math.random() - 0.5) * 6,
+                        vx: (Math.random() - 0.5) * 1.0,
+                        vy: -Math.random() * 3.0 - 1.2,
+                        life: 20, maxLife: 20, size: Math.random() * 14 + 6
+                    });
+                }
             }
         }
 
@@ -438,6 +387,42 @@
             ctx.shadowBlur = 6; ctx.shadowColor = '#00d2ff';
             ctx.beginPath(); ctx.arc(0, 0, 32, 0, Math.PI * 2); ctx.setLineDash([6, 6]); ctx.stroke();
             ctx.restore();
+        }
+
+        // 【核心優化】：高精度光流動態差值分析儀（100% 免疫眼鏡）
+        function processMouthMotionAnalysis(targetX, targetY, targetR) {
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            if (fireCooldown > 0) { fireCooldown--; return; }
+
+            // 將視訊畫面繪製到極小的隱藏畫布中以節省 CPU
+            blendCtx.drawImage(video, 0, 0, 80, 60);
+            let currentFrameData = blendCtx.getImageData(30, 25, 20, 15); // 精準鎖定中央嘴部區域
+
+            if (lastFrameData) {
+                let totalDiff = 0;
+                let len = currentFrameData.data.length;
+                for (let i = 0; i < len; i += 4) {
+                    // 對比前後兩幀的 RGB 差值變化
+                    let diffR = Math.abs(currentFrameData.data[i] - lastFrameData.data[i]);
+                    let diffG = Math.abs(currentFrameData.data[i+1] - lastFrameData.data[i+1]);
+                    let diffB = Math.abs(currentFrameData.data[i+2] - lastFrameData.data[i+2]);
+                    totalDiff += (diffR + diffG + diffB);
+                }
+                
+                let averageDiff = totalDiff / (len / 4);
+                
+                // 當嘴巴張開時，該區塊的對比與陰影會劇烈變動（差值突增）
+                if (averageDiff > 32) { 
+                    if (mouthReadyToFire && totalFireballs < 10) {
+                        spawnMouthFireball(targetX, targetY);
+                        mouthReadyToFire = false;
+                        fireCooldown = 25; // 防止連續重複觸發
+                    }
+                } else if (averageDiff < 18) {
+                    mouthReadyToFire = true;
+                }
+            }
+            lastFrameData = currentFrameData;
         }
 
         function gameLoop() {
@@ -452,11 +437,29 @@
             }
 
             if (gameStarted && !isGameOver) {
+                // 固定施法中央法陣座標（黃金幾何比例點）
+                let zoneX = canvas.width / 2;
+                let zoneY = canvas.height * 0.52;
+
+                // 執行免疫眼鏡的動態光流檢測
+                processMouthMotionAnalysis(zoneX, zoneY, 40);
+
+                // 繪製引導法陣（讓玩家知道把嘴巴放在這裡）
+                ctx.save();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = mouthReadyToFire ? 'rgba(0, 255, 120, 0.6)' : 'rgba(255, 69, 0, 0.8)';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = ctx.strokeStyle;
+                ctx.beginPath(); ctx.arc(zoneX, zoneY, 45, 0, Math.PI * 2); ctx.stroke();
+                ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+                ctx.beginPath(); ctx.arc(zoneX, zoneY, 52, 0, Math.PI * 2); ctx.stroke();
+                ctx.restore();
+
                 crosshair.x += (crosshair.targetX - crosshair.x) * 0.45;
                 crosshair.y += (crosshair.targetY - crosshair.y) * 0.45;
 
-                handleEyeFire(faceFeatures.leftEye);
-                handleEyeFire(faceFeatures.rightEye);
+                // 生成眼部酷炫聖火
+                drawGlowEyes(zoneX, zoneY);
 
                 ctx.save();
                 ctx.globalCompositeOperation = 'screen';
@@ -555,7 +558,7 @@
             ritualOpacity = 1.0; startCtx.globalAlpha = 1.0;
             
             wandTrail = []; fireballs = []; eyeFireParticles = []; explosions = [];
-            mouthReadyToFire = true;
+            mouthReadyToFire = true; lastFrameData = null; fireCooldown = 0;
             
             countdownOverlay.innerText = "3";
             document.getElementById('txt-success').innerText = "0";
