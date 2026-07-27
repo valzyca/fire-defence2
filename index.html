@@ -47,7 +47,6 @@
         </div>
     </div>
 
-    <!-- 實時鏡頭 -->
     <video id="webcam" autoplay loop muted playsinline style="display:none;"></video>
     <canvas id="game-canvas"></canvas>
 
@@ -108,7 +107,6 @@
         let nextRequiredPoint = 0; 
         let wandTrail = []; 
 
-        // 實時濾鏡級五官位置 cache
         let liveLeftEye = null;
         let liveRightEye = null;
         let liveMouth = null;
@@ -283,9 +281,9 @@
         function triggerCountdown() {
             gameState = 'countdown';
             countdownOverlay.style.display = 'block';
-            document.getElementById('ritual-title').innerText = "AI 視覺對焦中...";
+            document.getElementById('ritual-title').innerText = "AI 視覺追蹤初始化...";
             document.getElementById('ritual-title').style.color = "#00d2ff";
-            document.getElementById('ritual-desc').innerText = "張開嘴巴即可直接噴射火球，雙眼聖火將精確跟隨！";
+            document.getElementById('ritual-desc').innerText = "請將正臉對準鏡頭，張嘴噴射火球！";
             
             initFaceMeshEngine();
 
@@ -311,21 +309,19 @@
             if (trackingInitialized) return;
             trackingInitialized = true;
 
-            // 1. 初始化 Google 官方 Face Mesh 濾鏡引擎
             const faceMesh = new FaceMesh({
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
             });
 
             faceMesh.setOptions({
                 maxNumFaces: 1,
-                refineLandmarks: true, // 核心：精細化定位，穿透黑框眼鏡
+                refineLandmarks: true, 
                 minDetectionConfidence: 0.5,
                 minTrackingConfidence: 0.5
             });
 
             faceMesh.onResults(onFaceMeshResults);
 
-            // 2. 驅動視訊串流
             const camera = new Camera(video, {
                 onFrame: async () => {
                     await faceMesh.send({ image: video });
@@ -335,12 +331,13 @@
             });
             camera.start();
 
-            // 3. 魔杖紅色色彩追蹤
+            // 【重磅修正 2：重新設計朱紅/品紅實體魔杖色彩矩陣判定】
+            // 放寬 G 與 B 的容許度至 95，並強制要求 R 分量必須高於 G 與 B 的總和對比度，徹底解決反射與光線被阻斷問題！
             tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
-                return (r > 155 && g < 65 && b < 65); 
+                return (r > 140 && g < 95 && b < 95 && (r - g) > 50 && (r - b) > 50); 
             });
             const colorTracker = new tracking.ColorTracker(['magic_red']);
-            colorTracker.setMinDimension(5);
+            colorTracker.setMinDimension(4); // 調降最小特徵像素點至 4，距離較遠也能精準抓取
             colorTracker.on('track', function(event) {
                 if (isGameOver || event.data.length === 0 || gameState !== 'playing') {
                     crosshair.hasTracking = false;
@@ -354,7 +351,6 @@
             tracking.track('#webcam', colorTracker);
         }
 
-        // 【核心優化】：完美解決直立螢幕旋轉與縮放比對齊問題
         function onFaceMeshResults(results) {
             if (isGameOver || !results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
                 liveLeftEye = null; liveRightEye = null; liveMouth = null;
@@ -363,7 +359,6 @@
 
             const landmarks = results.multiFaceLandmarks[0];
 
-            // 讀取相機與當前手機網頁畫布的實際物理拉伸縮放比 (完美適應直立握持)
             let videoRatio = 640 / 480;
             let canvasRatio = canvas.width / canvas.height;
             let scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0;
@@ -378,32 +373,30 @@
                 offsetX = (canvas.width - scaleX) / 2;
             }
 
-            // 雙眼精密關鍵點 (瞳孔中心點索引：左468，右473)
+            // 瞳孔中心點索引：左 468，右 473
             let pLeftEye = landmarks[468];
             let pRightEye = landmarks[473];
-            
-            // 嘴唇內側關鍵點 (上唇13，下唇14)
             let pMouthTop = landmarks[13];
             let pMouthBottom = landmarks[14];
 
-            // 完美對齊座標系 (包含 scaleX 鏡像修正)
+            // 【重磅修正 1：對調左右眼物理渲染映射座標！】
+            // 因為 Canvas 背景做了左右鏡像倒置，AI 抓到的 LeftLandmark (左瞳) 必須映射到右側畫布，反之亦然。這能將聖火完美鎖死在瞳孔正中央！
             liveLeftEye = {
-                x: offsetX + (1 - pLeftEye.x) * scaleX,
-                y: offsetY + pLeftEye.y * scaleY
-            };
-            liveRightEye = {
                 x: offsetX + (1 - pRightEye.x) * scaleX,
                 y: offsetY + pRightEye.y * scaleY
+            };
+            liveRightEye = {
+                x: offsetX + (1 - pLeftEye.x) * scaleX,
+                y: offsetY + pLeftEye.y * scaleY
             };
             liveMouth = {
                 x: offsetX + (1 - pMouthTop.x) * scaleX,
                 y: offsetY + ((pMouthTop.y + pMouthBottom.y) / 2) * scaleY
             };
 
-            // 計算精確張嘴物理高度差值
             let mouthDist = Math.abs(pMouthTop.y - pMouthBottom.y);
 
-            if (mouthDist > 0.038) { // 靈敏張嘴閥值
+            if (mouthDist > 0.038) { 
                 if (mouthReadyToFire && gameState === 'playing' && totalFireballs < 10 && fireCooldown <= 0) {
                     spawnMouthFireball(liveMouth.x, liveMouth.y);
                     mouthReadyToFire = false;
@@ -418,7 +411,7 @@
             totalFireballs++;
             document.getElementById('txt-total').innerText = totalFireballs;
 
-            let angle = -Math.PI/2 + (Math.random() - 0.5) * 0.8; 
+            let angle = -Math.PI/2 + (Math.random() - 0.5) * 0.7; 
             fireballs.push({
                 x: startX, y: startY, size: 14,
                 speedX: Math.cos(angle) * 1.6,
@@ -437,7 +430,6 @@
             }
         }
 
-        // 生成精確黏合雙眼的動態火焰粒子
         function handleLiveEyeParticles() {
             if (!liveLeftEye || !liveRightEye) return;
             
@@ -468,7 +460,6 @@
             if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) resizeCanvases();
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 背景繪製鏡頭影像
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
                 ctx.save();
                 ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
@@ -482,10 +473,8 @@
                 crosshair.x += (crosshair.targetX - crosshair.x) * 0.45;
                 crosshair.y += (crosshair.targetY - crosshair.y) * 0.45;
 
-                // 生成眼部貼合火焰
                 handleLiveEyeParticles();
 
-                // 渲染真·跟隨火焰
                 ctx.save();
                 ctx.globalCompositeOperation = 'screen';
                 for (let i = eyeFireParticles.length - 1; i >= 0; i--) {
@@ -501,7 +490,6 @@
                 }
                 ctx.restore();
 
-                // 爆裂粒子
                 for (let i = explosions.length - 1; i >= 0; i--) {
                     let p = explosions[i]; p.x += p.vx; p.y += p.vy; p.alpha -= 0.04;
                     if (p.alpha <= 0) { explosions.splice(i, 1); continue; }
@@ -510,7 +498,6 @@
                 }
                 ctx.globalAlpha = 1.0;
 
-                // 火球飛舞
                 for (let i = fireballs.length - 1; i >= 0; i--) {
                     let fb = fireballs[i];
                     if (!fb.active) { fireballs.splice(i, 1); continue; }
@@ -579,7 +566,6 @@
             gameOverScreen.style.display = 'flex';
         }
 
-        // 徹底重整，釋放 WebGL 控制權，解決倒數卡「3」的黑畫面硬傷
         function forceReloadGame() {
             window.location.reload(true);
         }
