@@ -25,7 +25,7 @@
         #start-prompt { position: absolute; left: 50%; top: 61%; transform: translate(-50%, -50%); width: 100%; font-size: clamp(13px, 2.2vh, 20px); color: #ffd700; text-shadow: 0 0 8px #ff4500, 0 0 15px #ff0000; animation: pulseGlow 2s infinite ease-in-out; font-weight: bold; letter-spacing: 3px; margin: 0; }
         @keyframes pulseGlow { 0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(0.97); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.03); } }
         
-        #instruction { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 3; background: rgba(0,0,0,0.75); color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #ff4500; text-align: center; box-shadow: 0 0 15px rgba(255, 69, 0, 0.4); display: none; }
+        #instruction { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 3; background: rgba(0,0,0,0.75); color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #00d2ff; text-align: center; box-shadow: 0 0 15px rgba(0, 210, 255, 0.4); display: none; }
         #scoreboard { position: absolute; bottom: 20px; right: 20px; z-index: 3; background: rgba(0,0,0,0.8); color: #fff; padding: 15px; border-radius: 12px; border: 2px solid #00d2ff; font-weight: bold; font-size: 16px; line-height: 1.6; display: none; }
         .success { color: #00d2ff; }
         .failed { color: #ff4500; }
@@ -34,8 +34,8 @@
         #game-over-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 40; background: rgba(0, 0, 0, 0.85); flex-direction: column; justify-content: center; align-items: center; text-align: center; }
         #game-over-text { font-size: clamp(24px, 4.5vh, 32px); font-weight: bold; margin-bottom: 25px; letter-spacing: 1px; padding: 0 15px; box-sizing: border-box; width: 100%; }
         #game-result-details { color: #fff; font-size: 20px; margin-bottom: 35px; line-height: 1.8; }
-        #btn-reload { pointer-events: auto; background: linear-gradient(135deg, #ff4500 0%, #b30000 100%); color: #fff; font-size: 18px; font-weight: bold; padding: 14px 44px; border-radius: 30px; border: 2px solid #ffd700; box-shadow: 0 0 15px rgba(255, 69, 0, 0.6); cursor: pointer; transition: all 0.2s ease; letter-spacing: 2px; }
-        #btn-reload:active { transform: scale(0.95); box-shadow: 0 0 8px rgba(255, 69, 0, 0.4); }
+        #btn-reload { pointer-events: auto; background: linear-gradient(135deg, #0077ff 0%, #0033aa 100%); color: #fff; font-size: 18px; font-weight: bold; padding: 14px 44px; border-radius: 30px; border: 2px solid #ffd700; box-shadow: 0 0 15px rgba(0, 119, 255, 0.6); cursor: pointer; transition: all 0.2s ease; letter-spacing: 2px; }
+        #btn-reload:active { transform: scale(0.95); box-shadow: 0 0 8px rgba(0, 119, 255, 0.4); }
     </style>
 </head>
 <body>
@@ -165,7 +165,7 @@
         }, { passive: false });
         startScreen.addEventListener('touchmove', handleTouchMove, { passive: false });
 
-        // 🛠️ 【新增雙重保險機制】：當實體魔杖觸碰螢幕時，同步計算火球爆裂
+        // 雙重保險機制觸控直接引爆
         window.addEventListener('touchstart', handleDirectScreenTouch, { passive: false });
         window.addEventListener('mousedown', handleDirectScreenTouch);
 
@@ -173,7 +173,6 @@
             if (!gameStarted || isGameOver || gameState !== 'playing') return;
             let clientX = e.touches ? e.touches[0].clientX : e.clientX;
             let clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
             manuallyPopFireballAt(clientX, clientY);
         }
 
@@ -182,7 +181,7 @@
                 let fb = fireballs[i];
                 if (!fb.active) continue;
                 let distance = Math.hypot(tx - fb.x, ty - fb.y);
-                if (distance < (fb.size + 55)) { // 觸控判定範圍加寬
+                if (distance < (fb.size + 60)) { 
                     scoreSuccess++;
                     document.getElementById('txt-success').innerText = scoreSuccess;
                     createExplosion(fb.x, fb.y);
@@ -326,7 +325,8 @@
                     document.getElementById('scoreboard').style.display = 'block';
                     document.getElementById('ritual-title').innerText = "特訓進行中：真·實時人臉面具";
                     document.getElementById('ritual-title').style.color = "#ff4500";
-                    document.getElementById('ritual-desc').innerHTML = '任意移動並張嘴發射火球，揮動<span style="color:#ff3333;font-weight:bold;">紅色魔杖</span>將其點破！';
+                    // UI 指示同步調整為藍色魔杖
+                    document.getElementById('ritual-desc').innerHTML = '任意移動並張嘴發射火球，揮動<span style="color:#00d2ff;font-weight:bold;">藍色魔杖</span>將其點破！';
                     gameState = 'playing';
                     gameStarted = true;
                 }
@@ -360,15 +360,15 @@
             });
             camera.start();
 
-            // 🛠️ 【革命級動態色差判定庫】：
-            // 完全摒棄死板的絕對上限，改用動態通道比值：R 必須大於 110，且 R 必須比 G、B 兩者都高出 40 以上。
-            // 這能完美識別在火球強烈黃光、亮面反光折射下的朱紅色魔杖尖端！
-            tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
-                let isBrightRed = (r > 110 && (r - g) > 40 && (r - b) > 40);
-                return isBrightRed;
+            // 🛠️ 【全新置換：高動態藍色感應色矩陣】
+            // 針對寶藍色前端特製：B 通道必須大於 130，且 B 通道必須顯著大於 R、G 達 45 像素以上。
+            // 這能完美反切火球投射在亮面上的暖色炫光，達到零誤判的極致追蹤！
+            tracking.ColorTracker.registerColor('magic_blue', function(r, g, b) {
+                let isPureBlue = (b > 130 && (b - r) > 45 && (b - g) > 15);
+                return isPureBlue;
             });
-            const colorTracker = new tracking.ColorTracker(['magic_red']);
-            colorTracker.setMinDimension(2); // 特徵點門檻降至極限 2 像素，反光碎影也能無縫抓取
+            const colorTracker = new tracking.ColorTracker(['magic_blue']);
+            colorTracker.setMinDimension(3); 
             colorTracker.on('track', function(event) {
                 if (isGameOver || event.data.length === 0 || gameState !== 'playing') {
                     crosshair.hasTracking = false;
@@ -483,11 +483,12 @@
             });
         }
 
+        // 追蹤圈微調為炫酷的冰藍色魔法陣
         function drawMagicCrosshair(x, y) {
             crosshair.rotation += 0.04;
             ctx.save(); ctx.translate(x, y); ctx.rotate(crosshair.rotation);
             ctx.lineWidth = 2.5; ctx.strokeStyle = '#00d2ff';
-            ctx.shadowBlur = 6; ctx.shadowColor = '#00d2ff';
+            ctx.shadowBlur = 8; ctx.shadowColor = '#00d2ff';
             ctx.beginPath(); ctx.arc(0, 0, 32, 0, Math.PI * 2); ctx.setLineDash([6, 6]); ctx.stroke();
             ctx.restore();
         }
@@ -549,7 +550,7 @@
                     ctx.fillStyle = grad; ctx.arc(fb.x, fb.y, fb.size, 0, Math.PI * 2); ctx.fill();
                     ctx.restore();
 
-                    // 鏡頭色彩準星碰撞判定
+                    // 藍色科技準星追蹤判定
                     if (crosshair.hasTracking) {
                         let distance = Math.hypot(crosshair.x - fb.x, crosshair.y - fb.y);
                         if (distance < (fb.size * 0.95 + 45)) {
