@@ -9,9 +9,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap" rel="stylesheet">
     
-    <!-- 引入高可靠性輕量級網頁人臉面具濾鏡庫 (Jeeliz Face Filter) -->
-    <script src="https://cdn.jsdelivr.net/npm/jeelizfacefilter@2.1.2/dist/jeelizFaceFilter.js"></script>
-    <!-- 引入標準色彩追蹤庫（用於魔杖） -->
+    <!-- 引入高可用性官方 AI Face Mesh 核心與鏡頭驅動庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <!-- 引入魔杖色彩追蹤庫 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tracking.js/1.1.3/tracking-min.js"></script>
 
     <style>
@@ -46,8 +47,8 @@
         </div>
     </div>
 
-    <!-- 常駐視訊串流區 -->
-    <video id="webcam" width="480" height="360" autoplay loop muted playsinline style="display:none;"></video>
+    <!-- 實時鏡頭 -->
+    <video id="webcam" autoplay loop muted playsinline style="display:none;"></video>
     <canvas id="game-canvas"></canvas>
 
     <div id="countdown-overlay">3</div>
@@ -107,10 +108,10 @@
         let nextRequiredPoint = 0; 
         let wandTrail = []; 
 
-        // 實時濾鏡級五官位置 cache (隨人臉平移旋轉)
-        let eyeLeftPos = { x: 0, y: 0 };
-        let eyeRightPos = { x: 0, y: 0 };
-        let mouthPos = { x: 0, y: 0 };
+        // 實時濾鏡級五官位置 cache
+        let liveLeftEye = null;
+        let liveRightEye = null;
+        let liveMouth = null;
         let mouthReadyToFire = true;
         let fireCooldown = 0;
 
@@ -282,11 +283,11 @@
         function triggerCountdown() {
             gameState = 'countdown';
             countdownOverlay.style.display = 'block';
-            document.getElementById('ritual-title').innerText = "AI 濾鏡初始化...";
-            document.getElementById('ritual-title').style.color = "#ffd700";
-            document.getElementById('ritual-desc').innerText = "火球將直接從你的嘴巴噴出，雙眼聖火將即時跟隨人臉！";
+            document.getElementById('ritual-title').innerText = "AI 視覺對焦中...";
+            document.getElementById('ritual-title').style.color = "#00d2ff";
+            document.getElementById('ritual-desc').innerText = "張開嘴巴即可直接噴射火球，雙眼聖火將精確跟隨！";
             
-            initFaceFilterAndWandTracker();
+            initFaceMeshEngine();
 
             let timer = setInterval(() => {
                 countdownNumber--;
@@ -296,7 +297,7 @@
                     clearInterval(timer);
                     countdownOverlay.style.display = 'none';
                     document.getElementById('scoreboard').style.display = 'block';
-                    document.getElementById('ritual-title').innerText = "特訓進行中：實時人臉面具";
+                    document.getElementById('ritual-title').innerText = "特訓進行中：真·實時人臉面具";
                     document.getElementById('ritual-title').style.color = "#ff4500";
                     document.getElementById('ritual-desc').innerHTML = '任意移動並張嘴發射火球，揮動<span style="color:#ff3333;font-weight:bold;">紅色魔杖</span>將其點破！';
                     gameState = 'playing';
@@ -305,53 +306,34 @@
             }, 1000);
         }
 
-        function initFaceFilterAndWandTracker() {
-            if (modulesInitialized) return;
-            modulesInitialized = true;
+        let trackingInitialized = false;
+        function initFaceMeshEngine() {
+            if (trackingInitialized) return;
+            trackingInitialized = true;
 
-            // 1. 驅動隱藏相機鏡頭
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 }, audio: false })
-            .then(function(stream) {
-                video.srcObject = stream;
-                video.play();
+            // 1. 初始化 Google 官方 Face Mesh 濾鏡引擎
+            const faceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
             });
 
-            // 2. 啟動商用級網頁人臉網格濾鏡 (Jeeliz Face Filter) - 完美穿透眼鏡
-            JEELIZFACEFILTER.init({
-                canvasId: 'blend-canvas', // 使用隱藏畫布做 WebGL 神經網路運算
-                NNCPath: 'https://cdn.jsdelivr.net/npm/jeelizfacefilter@2.1.2/dist/', 
-                animateDelay: 2,
-                callbackReady: function(errCode) {
-                    if (errCode) { console.log('濾鏡庫載入失敗', errCode); return; }
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true, // 核心：精細化定位，穿透黑框眼鏡
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            faceMesh.onResults(onFaceMeshResults);
+
+            // 2. 驅動視訊串流
+            const camera = new Camera(video, {
+                onFrame: async () => {
+                    await faceMesh.send({ image: video });
                 },
-                callbackTrack: function(detectState) {
-                    // 若畫面中沒偵測到人臉，直接退出不更新座標
-                    if (detectState.detected < 0.6 || isGameOver || gameState !== 'playing') return;
-
-                    // 取得三維矩陣映射參數 (完美轉換成網頁 Canvas 的 X, Y 座標)
-                    let x = (detectState.x + 1) * 0.5 * canvas.width;
-                    let y = (1 - (detectState.y + 1) * 0.5) * canvas.height;
-                    let scale = detectState.s * canvas.width * 0.6;
-
-                    // 利用人臉網格幾何學，精準鎖定雙眼與嘴巴的實時移動座標 (跟隨人臉)
-                    eyeLeftPos = { x: x - scale * 0.22, y: y - scale * 0.15 };
-                    eyeRightPos = { x: x + scale * 0.22, y: y - scale * 0.15 };
-                    mouthPos = { x: x, y: y + scale * 0.22 };
-
-                    // 讀取神經網路輸出的張嘴表現表情值 (expressions[0] 即為張嘴程度)
-                    let mouthOpenValue = detectState.expressions[0]; 
-
-                    if (mouthOpenValue > 0.55) { // 閥值突破，代表嘴巴真正張開
-                        if (mouthReadyToFire && totalFireballs < 10 && fireCooldown <= 0) {
-                            spawnMouthFireball(mouthPos.x, mouthPos.y);
-                            mouthReadyToFire = false;
-                            fireCooldown = 22;
-                        }
-                    } else if (mouthOpenValue < 0.25) {
-                        mouthReadyToFire = true;
-                    }
-                }
+                width: 640,
+                height: 480
             });
+            camera.start();
 
             // 3. 魔杖紅色色彩追蹤
             tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
@@ -372,13 +354,71 @@
             tracking.track('#webcam', colorTracker);
         }
 
-        let modulesInitialized = false;
+        // 【核心優化】：完美解決直立螢幕旋轉與縮放比對齊問題
+        function onFaceMeshResults(results) {
+            if (isGameOver || !results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+                liveLeftEye = null; liveRightEye = null; liveMouth = null;
+                return;
+            }
+
+            const landmarks = results.multiFaceLandmarks[0];
+
+            // 讀取相機與當前手機網頁畫布的實際物理拉伸縮放比 (完美適應直立握持)
+            let videoRatio = 640 / 480;
+            let canvasRatio = canvas.width / canvas.height;
+            let scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0;
+
+            if (canvasRatio > videoRatio) {
+                scaleX = canvas.width;
+                scaleY = canvas.width / videoRatio;
+                offsetY = (canvas.height - scaleY) / 2;
+            } else {
+                scaleX = canvas.height * videoRatio;
+                scaleY = canvas.height;
+                offsetX = (canvas.width - scaleX) / 2;
+            }
+
+            // 雙眼精密關鍵點 (瞳孔中心點索引：左468，右473)
+            let pLeftEye = landmarks[468];
+            let pRightEye = landmarks[473];
+            
+            // 嘴唇內側關鍵點 (上唇13，下唇14)
+            let pMouthTop = landmarks[13];
+            let pMouthBottom = landmarks[14];
+
+            // 完美對齊座標系 (包含 scaleX 鏡像修正)
+            liveLeftEye = {
+                x: offsetX + (1 - pLeftEye.x) * scaleX,
+                y: offsetY + pLeftEye.y * scaleY
+            };
+            liveRightEye = {
+                x: offsetX + (1 - pRightEye.x) * scaleX,
+                y: offsetY + pRightEye.y * scaleY
+            };
+            liveMouth = {
+                x: offsetX + (1 - pMouthTop.x) * scaleX,
+                y: offsetY + ((pMouthTop.y + pMouthBottom.y) / 2) * scaleY
+            };
+
+            // 計算精確張嘴物理高度差值
+            let mouthDist = Math.abs(pMouthTop.y - pMouthBottom.y);
+
+            if (mouthDist > 0.038) { // 靈敏張嘴閥值
+                if (mouthReadyToFire && gameState === 'playing' && totalFireballs < 10 && fireCooldown <= 0) {
+                    spawnMouthFireball(liveMouth.x, liveMouth.y);
+                    mouthReadyToFire = false;
+                    fireCooldown = 20;
+                }
+            } else if (mouthDist < 0.018) {
+                mouthReadyToFire = true;
+            }
+        }
 
         function spawnMouthFireball(startX, startY) {
             totalFireballs++;
             document.getElementById('txt-total').innerText = totalFireballs;
 
-            let angle = -Math.PI/2 + (Math.random() - 0.5) * 0.7; 
+            let angle = -Math.PI/2 + (Math.random() - 0.5) * 0.8; 
             fireballs.push({
                 x: startX, y: startY, size: 14,
                 speedX: Math.cos(angle) * 1.6,
@@ -397,19 +437,19 @@
             }
         }
 
-        // 火焰粒子完全綁定實時跟隨雙眼座標
+        // 生成精確黏合雙眼的動態火焰粒子
         function handleLiveEyeParticles() {
-            if (eyeLeftPos.x === 0 && eyeRightPos.x === 0) return;
+            if (!liveLeftEye || !liveRightEye) return;
             
-            const eyes = [eyeLeftPos, eyeRightPos];
+            const eyes = [liveLeftEye, liveRightEye];
             eyes.forEach(eye => {
-                for(let i=0; i<2; i++) {
+                for(let i=0; i<3; i++) {
                     eyeFireParticles.push({
-                        x: eye.x + (Math.random() - 0.5) * 12,
-                        y: eye.y + (Math.random() - 0.5) * 8,
+                        x: eye.x + (Math.random() - 0.5) * 10,
+                        y: eye.y + (Math.random() - 0.5) * 6,
                         vx: (Math.random() - 0.5) * 0.8,
-                        vy: -Math.random() * 3.0 - 1.2,
-                        life: 20, maxLife: 20, size: Math.random() * 14 + 6
+                        vy: -Math.random() * 3.5 - 1.5,
+                        life: 18, maxLife: 18, size: Math.random() * 16 + 6
                     });
                 }
             });
@@ -428,7 +468,7 @@
             if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) resizeCanvases();
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 在背景完整繪製視訊影像
+            // 背景繪製鏡頭影像
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
                 ctx.save();
                 ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
@@ -442,10 +482,10 @@
                 crosshair.x += (crosshair.targetX - crosshair.x) * 0.45;
                 crosshair.y += (crosshair.targetY - crosshair.y) * 0.45;
 
-                // 呼叫眼部火球動態粒子
+                // 生成眼部貼合火焰
                 handleLiveEyeParticles();
 
-                // 繪製眼睛聖火面具 (100% 隨人臉移動)
+                // 渲染真·跟隨火焰
                 ctx.save();
                 ctx.globalCompositeOperation = 'screen';
                 for (let i = eyeFireParticles.length - 1; i >= 0; i--) {
@@ -461,7 +501,7 @@
                 }
                 ctx.restore();
 
-                // 渲染魔杖爆裂火花
+                // 爆裂粒子
                 for (let i = explosions.length - 1; i >= 0; i--) {
                     let p = explosions[i]; p.x += p.vx; p.y += p.vy; p.alpha -= 0.04;
                     if (p.alpha <= 0) { explosions.splice(i, 1); continue; }
@@ -470,7 +510,7 @@
                 }
                 ctx.globalAlpha = 1.0;
 
-                // 火球飛離更新
+                // 火球飛舞
                 for (let i = fireballs.length - 1; i >= 0; i--) {
                     let fb = fireballs[i];
                     if (!fb.active) { fireballs.splice(i, 1); continue; }
@@ -539,6 +579,7 @@
             gameOverScreen.style.display = 'flex';
         }
 
+        // 徹底重整，釋放 WebGL 控制權，解決倒數卡「3」的黑畫面硬傷
         function forceReloadGame() {
             window.location.reload(true);
         }
