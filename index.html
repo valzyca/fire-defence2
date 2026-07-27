@@ -6,14 +6,6 @@
     <title>Kinetic Sorcery - 巫師火原素特訓</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigi<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Kinetic Sorcery - 巫師火原素特訓</title>
-    
-    <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap" rel="stylesheet">
     
@@ -38,7 +30,6 @@
         .success { color: #00d2ff; }
         .failed { color: #ff4500; }
         
-        /* 羅馬數字巨大倒數計時樣式優化 */
         #countdown-overlay { 
             display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
             z-index: 5; font-family: 'Cinzel Decorative', Georgia, serif; font-size: 110px; font-weight: bold; 
@@ -64,7 +55,6 @@
     <video id="webcam" autoplay loop muted playsinline style="display:none;"></video>
     <canvas id="game-canvas"></canvas>
 
-    <!-- 初始顯示羅馬數字 III -->
     <div id="countdown-overlay">III</div>
 
     <div id="instruction">
@@ -302,7 +292,6 @@
             
             initFaceMeshEngine();
 
-            // 【修正 2】：將原本的 3, 2, 1 阿拉伯數字全面轉換為羅馬數字結構
             const romanNumerals = ["", "I", "II", "III"];
             let timer = setInterval(() => {
                 countdownNumber--;
@@ -348,7 +337,6 @@
             });
             camera.start();
 
-            // 放寬紅色色塊偵測矩陣範圍，徹底支援朱紅與品紅色
             tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
                 return (r > 140 && g < 95 && b < 95 && (r - g) > 50 && (r - b) > 50); 
             });
@@ -367,7 +355,6 @@
             tracking.track('#webcam', colorTracker);
         }
 
-        // 【修正 1：真·三維空間透視映射幾何演算法】
         function onFaceMeshResults(results) {
             if (isGameOver || !results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
                 liveLeftEye = null; liveRightEye = null; liveMouth = null;
@@ -376,7 +363,6 @@
 
             const landmarks = results.multiFaceLandmarks[0];
 
-            // 1. 計算動態自適應黑邊裁切縮放比（Object-fit: cover 逆向還原）
             let videoRatio = 640 / 480;
             let canvasRatio = canvas.width / canvas.height;
             let scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0;
@@ -391,18 +377,11 @@
                 offsetX = (canvas.width - scaleX) / 2;
             }
 
-            // 2. 精確擷取 MediaPipe 瞳孔絕對中心點（左眼 468，右眼 473）
             let rawLeftEye = landmarks[468];
             let rawRightEye = landmarks[473];
             let pMouthTop = landmarks[13];
             let pMouthBottom = landmarks[14];
 
-            // 3. 【核心幾何矩陣修復】：引入雙眼距離向量內置補間演算法
-            // 由於直立握持時影像被強制等比縮放，我們實時計算雙眼的 3D 距離作為動態特徵常數
-            let rawDistX = Math.abs(rawLeftEye.x - rawRightEye.x);
-            
-            // 透過非線性動態插值，修正側頭 (Yaw)、低頭 (Pitch) 產生的幾何透視位移。
-            // 配合 canvas 鏡像，將兩側飄移量完美扣回，強制將渲染核心百分之百錨定在瞳孔正中央！
             liveLeftEye = {
                 x: offsetX + (1 - rawLeftEye.x) * scaleX,
                 y: offsetY + rawLeftEye.y * scaleY
@@ -416,7 +395,6 @@
                 y: offsetY + ((pMouthTop.y + pMouthBottom.y) / 2) * scaleY
             };
 
-            // 計算張嘴高度
             let mouthDist = Math.abs(pMouthTop.y - pMouthBottom.y);
             if (mouthDist > 0.038) { 
                 if (mouthReadyToFire && gameState === 'playing' && totalFireballs < 10 && fireCooldown <= 0) {
@@ -452,7 +430,6 @@
             }
         }
 
-        // 精準鎖定經 3D 透視校正後的動態瞳孔座標
         function handleLiveEyeParticles() {
             if (!liveLeftEye || !liveRightEye) return;
             
@@ -460,580 +437,11 @@
             eyes.forEach(eye => {
                 for(let i=0; i<3; i++) {
                     eyeFireParticles.push({
-                        x: eye.x + (Math.random() - 0.5) * 8, // 收緊火苗散開範圍，使其完美包裹眼睛
+                        x: eye.x + (Math.random() - 0.5) * 8, 
                         y: eye.y + (Math.random() - 0.5) * 6,
                         vx: (Math.random() - 0.5) * 0.7,
                         vy: -Math.random() * 3.5 - 1.5,
                         life: 18, maxLife: 18, size: Math.random() * 14 + 6
-                    });
-                }
-            });
-        }
-
-        function drawMagicCrosshair(x, y) {
-            crosshair.rotation += 0.04;
-            ctx.save(); ctx.translate(x, y); ctx.rotate(crosshair.rotation);
-            ctx.lineWidth = 2.5; ctx.strokeStyle = '#00d2ff';
-            ctx.shadowBlur = 6; ctx.shadowColor = '#00d2ff';
-            ctx.beginPath(); ctx.arc(0, 0, 32, 0, Math.PI * 2); ctx.setLineDash([6, 6]); ctx.stroke();
-            ctx.restore();
-        }
-
-        function gameLoop() {
-            if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) resizeCanvases();
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                ctx.save();
-                ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                ctx.restore();
-            }
-
-            if (gameStarted && !isGameOver) {
-                if (fireCooldown > 0) fireCooldown--;
-
-                crosshair.x += (crosshair.targetX - crosshair.x) * 0.45;
-                crosshair.y += (crosshair.targetY - crosshair.y) * 0.45;
-
-                handleLiveEyeParticles();
-
-                ctx.save();
-                ctx.globalCompositeOperation = 'screen';
-                for (let i = eyeFireParticles.length - 1; i >= 0; i--) {
-                    let p = eyeFireParticles[i]; p.x += p.vx; p.y += p.vy; p.life--;
-                    if (p.life <= 0) { eyeFireParticles.splice(i, 1); continue; }
-                    let ratio = p.life / p.maxLife;
-                    let grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
-                    grad.addColorStop(0, 'rgba(255, 240, 180, ' + ratio + ')');
-                    grad.addColorStop(0.2, 'rgba(255, 110, 0, ' + ratio * 0.8 + ')');
-                    grad.addColorStop(1, 'rgba(255,0,0,0)');
-                    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                    ctx.fillStyle = grad; ctx.fill();
-                }
-                ctx.restore();
-
-                for (let i = explosions.length - 1; i >= 0; i--) {
-                    let p = explosions[i]; p.x += p.vx; p.y += p.vy; p.alpha -= 0.04;
-                    if (p.alpha <= 0) { explosions.splice(i, 1); continue; }
-                    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                    ctx.fillStyle = p.color; ctx.globalAlpha = p.alpha; ctx.fill();
-                }
-                ctx.globalAlpha = 1.0;
-
-                for (let i = fireballs.length - 1; i >= 0; i--) {
-                    let fb = fireballs[i];
-                    if (!fb.active) { fireballs.splice(i, 1); continue; }
-
-                    fb.x += fb.speedX;
-                    fb.y += fb.speedY;
-                    fb.size += 0.28;
-
-                    ctx.save();
-                    ctx.beginPath();
-                    let grad = ctx.createRadialGradient(fb.x, fb.y, fb.size*0.1, fb.x, fb.y, fb.size);
-                    grad.addColorStop(0, '#ffffff'); grad.addColorStop(0.3, '#ffcc00'); grad.addColorStop(0.6, '#ff4500'); grad.addColorStop(1, 'rgba(255,69,0,0)');
-                    ctx.fillStyle = grad; ctx.arc(fb.x, fb.y, fb.size, 0, Math.PI * 2); ctx.fill();
-                    ctx.restore();
-
-                    if (crosshair.hasTracking) {
-                        let distance = Math.hypot(crosshair.x - fb.x, crosshair.y - fb.y);
-                        if (distance < (fb.size * 0.85 + 25)) {
-                            scoreSuccess++;
-                            document.getElementById('txt-success').innerText = scoreSuccess;
-                            createExplosion(fb.x, fb.y);
-                            fb.active = false;
-                            checkGameCompletion();
-                        }
-                    }
-
-                    if (fb.active && (fb.x < -100 || fb.x > canvas.width + 100 || fb.y < -100 || fb.y > canvas.height + 100)) {
-                        scoreFailed++;
-                        document.getElementById('txt-failed').innerText = scoreFailed;
-                        fb.active = false;
-                        checkGameCompletion();
-                    }
-                }
-
-                if (crosshair.hasTracking) {
-                    drawMagicCrosshair(crosshair.x, crosshair.y);
-                }
-            }
-            requestAnimationFrame(gameLoop);
-        }
-
-        function checkGameCompletion() {
-            let currentTotal = scoreSuccess + scoreFailed;
-            if (currentTotal >= 10 || (totalFireballs >= 10 && fireballs.filter(f => f.active).length === 0)) {
-                triggerGameFinished();
-            }
-        }
-
-        function triggerGameFinished() {
-            isGameOver = true;
-            gameStarted = false;
-            
-            let details = document.getElementById('game-result-details');
-            let mainTxt = document.getElementById('game-over-text');
-            
-            details.innerHTML = `成功點破：<span style="color:#00d2ff; font-weight:bold;">${scoreSuccess}</span> 顆<br>防線漏接：<span style="color:#ff4500; font-weight:bold;">${scoreFailed}</span> 顆`;
-            
-            if (scoreSuccess >= 8) {
-                mainTxt.innerText = "特訓評價：大魔法師"; mainTxt.style.color = "#ffd700"; mainTxt.style.textShadow = "0 0 20px #ffd700";
-            } else if (scoreSuccess >= 5) {
-                mainTxt.innerText = "特訓評價：合格巫師"; mainTxt.style.color = "#00d2ff"; mainTxt.style.textShadow = "0 0 20px #00d2ff";
-            } else {
-                mainTxt.innerText = "特訓評價：魔法學徒"; mainTxt.style.color = "#ff3333"; mainTxt.style.textShadow = "0 0 20px #ff3333";
-            }
-            
-            gameOverScreen.style.display = 'flex';
-        }
-
-        function forceReloadGame() {
-            window.location.reload(true);
-        }
-
-        resizeCanvases();
-        updateStartScreen();
-        gameLoop();
-    </script>
-</body>
-</html>n>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap" rel="stylesheet">
-    
-    <!-- 引入高可用性官方 AI Face Mesh 核心與鏡頭驅動庫 -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
-    <!-- 引入魔杖色彩追蹤庫 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tracking.js/1.1.3/tracking-min.js"></script>
-
-    <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'PingFang TC', sans-serif; }
-        #webcam { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; transform: scaleX(-1); }
-        #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
-        #start-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; background-color: #000; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.5s ease; }
-        #start-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 11; }
-        #start-ui { position: relative; z-index: 12; text-align: center; pointer-events: none; width: 100%; height: 100%; }
-        #start-prompt { position: absolute; left: 50%; top: 61%; transform: translate(-50%, -50%); width: 100%; font-size: clamp(13px, 2.2vh, 20px); color: #ffd700; text-shadow: 0 0 8px #ff4500, 0 0 15px #ff0000; animation: pulseGlow 2s infinite ease-in-out; font-weight: bold; letter-spacing: 3px; margin: 0; }
-        @keyframes pulseGlow { 0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(0.97); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.03); } }
-        
-        #instruction { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 3; background: rgba(0,0,0,0.75); color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #ff4500; text-align: center; box-shadow: 0 0 15px rgba(255, 69, 0, 0.4); display: none; }
-        #scoreboard { position: absolute; bottom: 20px; right: 20px; z-index: 3; background: rgba(0,0,0,0.8); color: #fff; padding: 15px; border-radius: 12px; border: 2px solid #00d2ff; font-weight: bold; font-size: 16px; line-height: 1.6; display: none; }
-        .success { color: #00d2ff; }
-        .failed { color: #ff4500; }
-        #countdown-overlay { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 5; font-family: 'Cinzel Decorative', Georgia, serif; font-size: 120px; font-weight: bold; color: #ffd700; text-shadow: 0 0 30px #ff4500, 0 0 60px #ff0000; pointer-events: none; }
-        
-        #game-over-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 40; background: rgba(0, 0, 0, 0.85); flex-direction: column; justify-content: center; align-items: center; text-align: center; }
-        #game-over-text { font-size: clamp(24px, 4.5vh, 32px); font-weight: bold; margin-bottom: 25px; letter-spacing: 1px; padding: 0 15px; box-sizing: border-box; width: 100%; }
-        #game-result-details { color: #fff; font-size: 20px; margin-bottom: 35px; line-height: 1.8; }
-        #btn-reload { pointer-events: auto; background: linear-gradient(135deg, #ff4500 0%, #b30000 100%); color: #fff; font-size: 18px; font-weight: bold; padding: 14px 44px; border-radius: 30px; border: 2px solid #ffd700; box-shadow: 0 0 15px rgba(255, 69, 0, 0.6); cursor: pointer; transition: all 0.2s ease; letter-spacing: 2px; }
-        #btn-reload:active { transform: scale(0.95); box-shadow: 0 0 8px rgba(255, 69, 0, 0.4); }
-    </style>
-</head>
-<body>
-
-    <div id="start-screen">
-        <canvas id="start-canvas"></canvas>
-        <div id="start-ui">
-            <div id="start-prompt">─ 點擊螢幕 喚醒魔杖 ─</div>
-        </div>
-    </div>
-
-    <video id="webcam" autoplay loop muted playsinline style="display:none;"></video>
-    <canvas id="game-canvas"></canvas>
-
-    <div id="countdown-overlay">3</div>
-
-    <div id="instruction">
-        <strong id="ritual-title" style="color: #ffd700;">結界啟動中...</strong><br>
-        <span id="ritual-desc" style="font-size: 13px;">請用手指在圓圈內依序滑過發光點，一筆畫畫出五芒星！</span>
-    </div>
-
-    <div id="scoreboard">
-        <div>成功點破：<span id="txt-success" class="success">0</span> 次</div>
-        <div>飛離防線：<span id="txt-failed" class="failed">0</span> 次</div>
-        <div style="border-top: 1px solid #444; margin-top: 5px; font-size: 13px; color: #aaa;">總火球數：<span id="txt-total">0</span> / 10</div>
-    </div>
-
-    <div id="game-over-screen">
-        <div id="game-over-text">特訓結束</div>
-        <div id="game-result-details"></div>
-        <button id="btn-reload" onclick="forceReloadGame()">重新挑戰</button>
-    </div>
-
-    <script>
-        const video = document.getElementById('webcam');
-        const canvas = document.getElementById('game-canvas');
-        const ctx = canvas.getContext('2d');
-        const startScreen = document.getElementById('start-screen');
-        const startCanvas = document.getElementById('start-canvas');
-        const startCtx = startCanvas.getContext('2d');
-        const gameOverScreen = document.getElementById('game-over-screen');
-        const countdownOverlay = document.getElementById('countdown-overlay');
-
-        let gameStarted = false;
-        let scoreSuccess = 0;
-        let scoreFailed = 0;
-        let totalFireballs = 0;
-        let isGameOver = false;
-
-        let gameState = 'cover'; 
-        let countdownNumber = 3;
-
-        let fireballs = [];
-        let crosshair = { x: 0, y: 0, targetX: 0, targetY: 0, rotation: 0, currentSize: 35, hasTracking: false };
-        let explosions = []; 
-        let coronaParticles = [];
-        let eyeFireParticles = [];
-        
-        let magicCircleImg = new Image();
-        let bg1Img = new Image();
-        let circleRotation = 0;
-        let bg1Rotation = 0;
-        let ritualOpacity = 1.0; 
-
-        magicCircleImg.src = "bg.png"; 
-        bg1Img.src = "bg-1.png";
-
-        let pentagramPoints = []; 
-        let nextRequiredPoint = 0; 
-        let wandTrail = []; 
-
-        let liveLeftEye = null;
-        let liveRightEye = null;
-        let liveMouth = null;
-        let mouthReadyToFire = true;
-        let fireCooldown = 0;
-
-        function resizeCanvases() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            startCanvas.width = window.innerWidth;
-            startCanvas.height = window.innerHeight;
-            generatePentagramPoints();
-        }
-        window.addEventListener('resize', resizeCanvases);
-
-        function generatePentagramPoints() {
-            let centerX = startCanvas.width / 2;
-            let minDim = Math.min(startCanvas.width, startCanvas.height);
-            let circleCenterY = startCanvas.height * 0.34;
-            let radius = minDim * 0.26; 
-
-            pentagramPoints = [];
-            let drawOrderAngles = [ -Math.PI/2, Math.PI*0.7, -Math.PI*0.9, Math.PI*0.3, Math.PI*0.1 ];
-            for(let i=0; i<5; i++) {
-                let angle = drawOrderAngles[i];
-                pentagramPoints.push({ x: centerX + Math.cos(angle) * radius, y: circleCenterY + Math.sin(angle) * radius, activated: false });
-            }
-        }
-
-        function handleTouchMove(e) {
-            if (gameState !== 'drawing') return;
-            e.preventDefault();
-            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            let clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
-            wandTrail.push({ x: clientX, y: clientY });
-            if (wandTrail.length > 30) wandTrail.shift();
-
-            let targetPt = pentagramPoints[nextRequiredPoint];
-            if (targetPt) {
-                let dist = Math.hypot(clientX - targetPt.x, clientY - targetPt.y);
-                if (dist < 40) { 
-                    targetPt.activated = true;
-                    nextRequiredPoint++;
-                    if (nextRequiredPoint >= 5) gameState = 'success_anim';
-                }
-            }
-        }
-
-        startScreen.addEventListener('mousedown', (e) => {
-            if(gameState === 'cover') { gameState = 'drawing'; document.getElementById('start-prompt').style.display = 'none'; document.getElementById('instruction').style.display = 'block'; }
-        });
-        startScreen.addEventListener('mousemove', handleTouchMove);
-        startScreen.addEventListener('touchstart', (e) => {
-            if(gameState === 'cover') { gameState = 'drawing'; document.getElementById('start-prompt').style.display = 'none'; document.getElementById('instruction').style.display = 'block'; }
-        }, { passive: false });
-        startScreen.addEventListener('touchmove', handleTouchMove, { passive: false });
-
-        function updateStartScreen() {
-            if (gameStarted && gameState === 'playing') return;
-            if (startCanvas.width !== window.innerWidth || startCanvas.height !== window.innerHeight) resizeCanvases();
-            
-            startCtx.fillStyle = '#000000';
-            startCtx.fillRect(0, 0, startCanvas.width, startCanvas.height);
-
-            let centerX = startCanvas.width / 2;
-            let minDim = Math.min(startCanvas.width, startCanvas.height);
-            let circleCenterY = startCanvas.height * 0.34;
-
-            startCtx.save();
-            startCtx.globalAlpha = ritualOpacity;
-
-            if (gameState === 'cover' || gameState === 'success_anim') {
-                if (coronaParticles.length < 120) {
-                    let angle = Math.random() * Math.PI * 2;
-                    let speed = Math.random() * 2 + 1.5; 
-                    coronaParticles.push({
-                        x: centerX + Math.cos(angle) * (minDim * 0.25), y: circleCenterY + Math.sin(angle) * (minDim * 0.25),
-                        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-                        life: Math.random() * 30 + 20, maxLife: 50, size: Math.random() * 25 + 15
-                    });
-                }
-                startCtx.save();
-                startCtx.globalCompositeOperation = 'screen';
-                for (let i = coronaParticles.length - 1; i >= 0; i--) {
-                    let p = coronaParticles[i]; p.x += p.vx; p.y += p.vy; p.life--;
-                    if (p.life <= 0) { coronaParticles.splice(i, 1); continue; }
-                    let ratio = p.life / p.maxLife;
-                    let grad = startCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
-                    grad.addColorStop(0, 'rgba(255, 230, 150, ' + ratio + ')');
-                    grad.addColorStop(0.3, 'rgba(255, 90, 0, ' + ratio * 0.8 + ')');
-                    grad.addColorStop(1, 'rgba(0,0,0,0)');
-                    startCtx.beginPath(); startCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                    startCtx.fillStyle = grad; startCtx.fill();
-                }
-                startCtx.restore();
-            }
-
-            let fixedSize = minDim * 0.58;
-
-            if (gameState === 'cover') {
-                startCtx.save(); startCtx.translate(centerX, circleCenterY); circleRotation += 0.004; startCtx.rotate(circleRotation);
-                if (magicCircleImg.complete) startCtx.drawImage(magicCircleImg, -fixedSize / 2, -fixedSize / 2, fixedSize, fixedSize);
-                startCtx.restore();
-            } 
-            else if (gameState === 'drawing') {
-                startCtx.save(); startCtx.translate(centerX, circleCenterY); bg1Rotation -= 0.002; startCtx.rotate(bg1Rotation);
-                if (bg1Img.complete) startCtx.drawImage(bg1Img, -fixedSize / 2, -fixedSize / 2, fixedSize, fixedSize);
-                startCtx.restore();
-
-                if (wandTrail.length > 1) {
-                    startCtx.save();
-                    startCtx.strokeStyle = 'rgba(0, 210, 255, 0.4)'; startCtx.lineWidth = 8; startCtx.lineCap = 'round'; startCtx.lineJoin = 'round';
-                    startCtx.beginPath(); startCtx.moveTo(wandTrail[0].x, wandTrail[0].y);
-                    for(let k=1; k<wandTrail.length; k++) startCtx.lineTo(wandTrail[k].x, wandTrail[k].y);
-                    startCtx.stroke();
-                    startCtx.strokeStyle = '#ffffff'; startCtx.lineWidth = 3;
-                    startCtx.beginPath(); startCtx.moveTo(wandTrail[0].x, wandTrail[0].y);
-                    for(let k=1; k<wandTrail.length; k++) startCtx.lineTo(wandTrail[k].x, wandTrail[k].y);
-                    startCtx.stroke(); startCtx.restore();
-                }
-
-                pentagramPoints.forEach((pt, index) => {
-                    startCtx.save();
-                    let isCurrent = (index === nextRequiredPoint);
-                    if (pt.activated) {
-                        startCtx.fillStyle = '#00ffff'; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 9, 0, Math.PI * 2); startCtx.fill();
-                    } else if (isCurrent) {
-                        let breath = Math.sin(Date.now() * 0.008) * 2;
-                        startCtx.fillStyle = '#0077ff'; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 11 + breath, 0, Math.PI * 2); startCtx.fill();
-                        startCtx.strokeStyle = '#ffffff'; startCtx.lineWidth = 1.5; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 14 + breath, 0, Math.PI * 2); startCtx.stroke();
-                    } else {
-                        startCtx.fillStyle = 'rgba(0, 119, 255, 0.3)'; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 8, 0, Math.PI * 2); startCtx.fill();
-                    }
-                    startCtx.restore();
-                });
-            } 
-            else if (gameState === 'success_anim') {
-                circleRotation += 0.06; bg1Rotation -= 0.04;   
-                startCtx.save(); startCtx.translate(centerX, circleCenterY); startCtx.rotate(bg1Rotation);
-                if (bg1Img.complete) startCtx.drawImage(bg1Img, -fixedSize / 2, -fixedSize / 2, fixedSize, fixedSize);
-                startCtx.restore();
-
-                startCtx.save(); startCtx.translate(centerX, circleCenterY); startCtx.rotate(circleRotation);
-                startCtx.shadowBlur = 40; startCtx.shadowColor = '#ffd700'; 
-                if (magicCircleImg.complete) startCtx.drawImage(magicCircleImg, -fixedSize / 2, -fixedSize / 2, fixedSize, fixedSize);
-                startCtx.restore();
-
-                ritualOpacity -= 0.02;
-                if (ritualOpacity <= 0) {
-                    ritualOpacity = 0; startScreen.style.display = 'none';
-                    triggerCountdown(); 
-                }
-            }
-
-            if (gameState === 'cover' || gameState === 'drawing') {
-                startCtx.save();
-                let dynamicFontSize = Math.min(36, Math.max(18, minDim * 0.062));
-                startCtx.font = `bold ${dynamicFontSize}px 'Cinzel Decorative', Georgia, serif`;
-                startCtx.textAlign = "center"; startCtx.textBaseline = "middle"; startCtx.letterSpacing = "2px";
-                startCtx.lineWidth = 2; startCtx.strokeStyle = "#000000";
-                startCtx.strokeText("KINETIC SORCERY", centerX, startCanvas.height * 0.71);
-                startCtx.fillStyle = "#ffcc00";
-                startCtx.fillText("KINETIC SORCERY", centerX, startCanvas.height * 0.71);
-                startCtx.restore();
-            }
-
-            startCtx.restore();
-            requestAnimationFrame(updateStartScreen);
-        }
-
-        function triggerCountdown() {
-            gameState = 'countdown';
-            countdownOverlay.style.display = 'block';
-            document.getElementById('ritual-title').innerText = "AI 視覺追蹤初始化...";
-            document.getElementById('ritual-title').style.color = "#00d2ff";
-            document.getElementById('ritual-desc').innerText = "請將正臉對準鏡頭，張嘴噴射火球！";
-            
-            initFaceMeshEngine();
-
-            let timer = setInterval(() => {
-                countdownNumber--;
-                if (countdownNumber > 0) {
-                    countdownOverlay.innerText = countdownNumber;
-                } else {
-                    clearInterval(timer);
-                    countdownOverlay.style.display = 'none';
-                    document.getElementById('scoreboard').style.display = 'block';
-                    document.getElementById('ritual-title').innerText = "特訓進行中：真·實時人臉面具";
-                    document.getElementById('ritual-title').style.color = "#ff4500";
-                    document.getElementById('ritual-desc').innerHTML = '任意移動並張嘴發射火球，揮動<span style="color:#ff3333;font-weight:bold;">紅色魔杖</span>將其點破！';
-                    gameState = 'playing';
-                    gameStarted = true;
-                }
-            }, 1000);
-        }
-
-        let trackingInitialized = false;
-        function initFaceMeshEngine() {
-            if (trackingInitialized) return;
-            trackingInitialized = true;
-
-            const faceMesh = new FaceMesh({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-            });
-
-            faceMesh.setOptions({
-                maxNumFaces: 1,
-                refineLandmarks: true, 
-                minDetectionConfidence: 0.5,
-                minTrackingConfidence: 0.5
-            });
-
-            faceMesh.onResults(onFaceMeshResults);
-
-            const camera = new Camera(video, {
-                onFrame: async () => {
-                    await faceMesh.send({ image: video });
-                },
-                width: 640,
-                height: 480
-            });
-            camera.start();
-
-            // 【重磅修正 2：重新設計朱紅/品紅實體魔杖色彩矩陣判定】
-            // 放寬 G 與 B 的容許度至 95，並強制要求 R 分量必須高於 G 與 B 的總和對比度，徹底解決反射與光線被阻斷問題！
-            tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
-                return (r > 140 && g < 95 && b < 95 && (r - g) > 50 && (r - b) > 50); 
-            });
-            const colorTracker = new tracking.ColorTracker(['magic_red']);
-            colorTracker.setMinDimension(4); // 調降最小特徵像素點至 4，距離較遠也能精準抓取
-            colorTracker.on('track', function(event) {
-                if (isGameOver || event.data.length === 0 || gameState !== 'playing') {
-                    crosshair.hasTracking = false;
-                    return;
-                }
-                let validTarget = event.data[0];
-                crosshair.hasTracking = true;
-                crosshair.targetX = canvas.width - (validTarget.x + validTarget.width / 2) * (canvas.width / 640);
-                crosshair.targetY = (validTarget.y + validTarget.height / 2) * (canvas.height / 480);
-            });
-            tracking.track('#webcam', colorTracker);
-        }
-
-        function onFaceMeshResults(results) {
-            if (isGameOver || !results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
-                liveLeftEye = null; liveRightEye = null; liveMouth = null;
-                return;
-            }
-
-            const landmarks = results.multiFaceLandmarks[0];
-
-            let videoRatio = 640 / 480;
-            let canvasRatio = canvas.width / canvas.height;
-            let scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0;
-
-            if (canvasRatio > videoRatio) {
-                scaleX = canvas.width;
-                scaleY = canvas.width / videoRatio;
-                offsetY = (canvas.height - scaleY) / 2;
-            } else {
-                scaleX = canvas.height * videoRatio;
-                scaleY = canvas.height;
-                offsetX = (canvas.width - scaleX) / 2;
-            }
-
-            // 瞳孔中心點索引：左 468，右 473
-            let pLeftEye = landmarks[468];
-            let pRightEye = landmarks[473];
-            let pMouthTop = landmarks[13];
-            let pMouthBottom = landmarks[14];
-
-            // 【重磅修正 1：對調左右眼物理渲染映射座標！】
-            // 因為 Canvas 背景做了左右鏡像倒置，AI 抓到的 LeftLandmark (左瞳) 必須映射到右側畫布，反之亦然。這能將聖火完美鎖死在瞳孔正中央！
-            liveLeftEye = {
-                x: offsetX + (1 - pRightEye.x) * scaleX,
-                y: offsetY + pRightEye.y * scaleY
-            };
-            liveRightEye = {
-                x: offsetX + (1 - pLeftEye.x) * scaleX,
-                y: offsetY + pLeftEye.y * scaleY
-            };
-            liveMouth = {
-                x: offsetX + (1 - pMouthTop.x) * scaleX,
-                y: offsetY + ((pMouthTop.y + pMouthBottom.y) / 2) * scaleY
-            };
-
-            let mouthDist = Math.abs(pMouthTop.y - pMouthBottom.y);
-
-            if (mouthDist > 0.038) { 
-                if (mouthReadyToFire && gameState === 'playing' && totalFireballs < 10 && fireCooldown <= 0) {
-                    spawnMouthFireball(liveMouth.x, liveMouth.y);
-                    mouthReadyToFire = false;
-                    fireCooldown = 20;
-                }
-            } else if (mouthDist < 0.018) {
-                mouthReadyToFire = true;
-            }
-        }
-
-        function spawnMouthFireball(startX, startY) {
-            totalFireballs++;
-            document.getElementById('txt-total').innerText = totalFireballs;
-
-            let angle = -Math.PI/2 + (Math.random() - 0.5) * 0.7; 
-            fireballs.push({
-                x: startX, y: startY, size: 14,
-                speedX: Math.cos(angle) * 1.6,
-                speedY: Math.sin(angle) * 1.6,
-                active: true
-            });
-        }
-
-        function createExplosion(x, y) {
-            for (let i = 0; i < 18; i++) {
-                explosions.push({
-                    x: x, y: y, vx: (Math.random() - 0.5) * 10, vy: (Math.random() - 0.5) * 10,
-                    size: Math.random() * 5 + 3, alpha: 1,
-                    color: `hsl(${Math.random() * 30 + 12}, 100%, 60%)`
-                });
-            }
-        }
-
-        function handleLiveEyeParticles() {
-            if (!liveLeftEye || !liveRightEye) return;
-            
-            const eyes = [liveLeftEye, liveRightEye];
-            eyes.forEach(eye => {
-                for(let i=0; i<3; i++) {
-                    eyeFireParticles.push({
-                        x: eye.x + (Math.random() - 0.5) * 10,
-                        y: eye.y + (Math.random() - 0.5) * 6,
-                        vx: (Math.random() - 0.5) * 0.8,
-                        vy: -Math.random() * 3.5 - 1.5,
-                        life: 18, maxLife: 18, size: Math.random() * 16 + 6
                     });
                 }
             });
