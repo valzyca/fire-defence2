@@ -49,7 +49,7 @@
 
     <div id="instruction">
         <strong id="ritual-title" style="color: #ffd700;">結界啟動中...</strong><br>
-        <span id="ritual-desc" style="font-size: 13px;">請用手指在圓圈內滑過藍色發光點，一筆畫畫出五芒星！</span>
+        <span id="ritual-desc" style="font-size: 13px;">請用手指在圓圈內依序滑過發光點，一筆畫畫出五芒星！</span>
     </div>
 
     <div id="scoreboard">
@@ -64,7 +64,6 @@
         <div id="restart-hint">點擊畫面重新挑戰</div>
     </div>
 
-    <!-- 用於背景像素比對的隱藏畫布 -->
     <canvas id="blend-canvas" width="80" height="60" style="display:none;"></canvas>
 
     <script>
@@ -108,7 +107,6 @@
         let nextRequiredPoint = 0; 
         let wandTrail = []; 
 
-        // 物理追蹤參數快取
         let lastFrameData = null;
         let mouthReadyToFire = true;
         let fireCooldown = 0;
@@ -237,7 +235,7 @@
                     } else if (isCurrent) {
                         let breath = Math.sin(Date.now() * 0.008) * 2;
                         startCtx.fillStyle = '#0077ff'; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 11 + breath, 0, Math.PI * 2); startCtx.fill();
-                        startCtx.strokeStyle = '#ffffff'; startCtx.lineWidth = 1.5; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 14 + breath, 0, Math.PI * 2); stroke();
+                        startCtx.strokeStyle = '#ffffff'; startCtx.lineWidth = 1.5; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 14 + breath, 0, Math.PI * 2); startCtx.stroke();
                     } else {
                         startCtx.fillStyle = 'rgba(0, 119, 255, 0.3)'; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 8, 0, Math.PI * 2); startCtx.fill();
                     }
@@ -319,7 +317,6 @@
                 video.play();
             });
 
-            // 魔杖紅色光點色彩追蹤
             tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
                 return (r > 155 && g < 65 && b < 65); 
             });
@@ -361,7 +358,6 @@
             }
         }
 
-        // 渲染眼部酷炫跟隨火焰（依據引導框做相對位置渲染，免除眼鏡干擾阻斷）
         function drawGlowEyes(centerX, centerY) {
             let leftEye = { x: centerX - 45, y: centerY - 55 };
             let rightEye = { x: centerX + 45, y: centerY - 55 };
@@ -389,20 +385,17 @@
             ctx.restore();
         }
 
-        // 【核心優化】：高精度光流動態差值分析儀（100% 免疫眼鏡）
         function processMouthMotionAnalysis(targetX, targetY, targetR) {
             if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
             if (fireCooldown > 0) { fireCooldown--; return; }
 
-            // 將視訊畫面繪製到極小的隱藏畫布中以節省 CPU
             blendCtx.drawImage(video, 0, 0, 80, 60);
-            let currentFrameData = blendCtx.getImageData(30, 25, 20, 15); // 精準鎖定中央嘴部區域
+            let currentFrameData = blendCtx.getImageData(30, 25, 20, 15); 
 
             if (lastFrameData) {
                 let totalDiff = 0;
                 let len = currentFrameData.data.length;
                 for (let i = 0; i < len; i += 4) {
-                    // 對比前後兩幀的 RGB 差值變化
                     let diffR = Math.abs(currentFrameData.data[i] - lastFrameData.data[i]);
                     let diffG = Math.abs(currentFrameData.data[i+1] - lastFrameData.data[i+1]);
                     let diffB = Math.abs(currentFrameData.data[i+2] - lastFrameData.data[i+2]);
@@ -411,12 +404,11 @@
                 
                 let averageDiff = totalDiff / (len / 4);
                 
-                // 當嘴巴張開時，該區塊的對比與陰影會劇烈變動（差值突增）
                 if (averageDiff > 32) { 
                     if (mouthReadyToFire && totalFireballs < 10) {
                         spawnMouthFireball(targetX, targetY);
                         mouthReadyToFire = false;
-                        fireCooldown = 25; // 防止連續重複觸發
+                        fireCooldown = 25; 
                     }
                 } else if (averageDiff < 18) {
                     mouthReadyToFire = true;
@@ -437,14 +429,11 @@
             }
 
             if (gameStarted && !isGameOver) {
-                // 固定施法中央法陣座標（黃金幾何比例點）
                 let zoneX = canvas.width / 2;
                 let zoneY = canvas.height * 0.52;
 
-                // 執行免疫眼鏡的動態光流檢測
                 processMouthMotionAnalysis(zoneX, zoneY, 40);
 
-                // 繪製引導法陣（讓玩家知道把嘴巴放在這裡）
                 ctx.save();
                 ctx.lineWidth = 3;
                 ctx.strokeStyle = mouthReadyToFire ? 'rgba(0, 255, 120, 0.6)' : 'rgba(255, 69, 0, 0.8)';
@@ -458,7 +447,6 @@
                 crosshair.x += (crosshair.targetX - crosshair.x) * 0.45;
                 crosshair.y += (crosshair.targetY - crosshair.y) * 0.45;
 
-                // 生成眼部酷炫聖火
                 drawGlowEyes(zoneX, zoneY);
 
                 ctx.save();
