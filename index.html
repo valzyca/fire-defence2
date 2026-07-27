@@ -21,16 +21,29 @@
         #start-ui { position: relative; z-index: 12; text-align: center; pointer-events: none; width: 100%; height: 100%; }
         #start-prompt { position: absolute; left: 50%; top: 61%; transform: translate(-50%, -50%); width: 100%; font-size: clamp(13px, 2.2vh, 20px); color: #ffd700; text-shadow: 0 0 8px #ff4500, 0 0 15px #ff0000; animation: pulseGlow 2s infinite ease-in-out; font-weight: bold; letter-spacing: 3px; margin: 0; }
         @keyframes pulseGlow { 0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(0.97); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.03); } }
+        
         #instruction { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 3; background: rgba(0,0,0,0.75); color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #ff4500; text-align: center; box-shadow: 0 0 15px rgba(255, 69, 0, 0.4); display: none; }
         #scoreboard { position: absolute; bottom: 20px; right: 20px; z-index: 3; background: rgba(0,0,0,0.8); color: #fff; padding: 15px; border-radius: 12px; border: 2px solid #00d2ff; font-weight: bold; font-size: 16px; line-height: 1.6; display: none; }
         .success { color: #00d2ff; }
         .failed { color: #ff4500; }
         #countdown-overlay { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 5; font-family: 'Cinzel Decorative', Georgia, serif; font-size: 120px; font-weight: bold; color: #ffd700; text-shadow: 0 0 30px #ff4500, 0 0 60px #ff0000; pointer-events: none; }
-        #game-over-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 4; background: rgba(0, 0, 0, 0.85); flex-direction: column; justify-content: center; align-items: center; text-align: center; cursor: pointer; }
-        #game-over-text { font-size: 54px; font-weight: bold; margin-bottom: 20px; letter-spacing: 2px; }
-        #game-result-details { color: #fff; font-size: 22px; margin-bottom: 30px; line-height: 1.8; }
-        #restart-hint { color: #aaaaaa; font-size: 18px; animation: blink 1.5s infinite; }
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        
+        /* 結算大屏樣式優化 */
+        #game-over-screen { 
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 40; 
+            background: rgba(0, 0, 0, 0.85); flex-direction: column; justify-content: center; align-items: center; text-align: center; 
+        }
+        #game-over-text { font-size: 46px; font-weight: bold; margin-bottom: 20px; letter-spacing: 2px; }
+        #game-result-details { color: #fff; font-size: 22px; margin-bottom: 35px; line-height: 1.8; }
+        
+        /* 重新整理按鈕樣式 */
+        #btn-reload {
+            pointer-events: auto; background: linear-gradient(135deg, #ff4500 0%, #b30000 100%);
+            color: #fff; font-size: 18px; font-weight: bold; padding: 14px 36px; border-radius: 30px;
+            border: 2px solid #ffd700; box-shadow: 0 0 15px rgba(255, 69, 0, 0.6);
+            cursor: pointer; transition: all 0.2s ease; letter-spacing: 2px;
+        }
+        #btn-reload:active { transform: scale(0.95); box-shadow: 0 0 8px rgba(255, 69, 0, 0.4); }
     </style>
 </head>
 <body>
@@ -58,10 +71,11 @@
         <div style="border-top: 1px solid #444; margin-top: 5px; font-size: 13px; color: #aaa;">總火球數：<span id="txt-total">0</span> / 10</div>
     </div>
 
-    <div id="game-over-screen" onclick="resetGame()">
+    <!-- 終極結算大屏：內嵌原生網頁重整功能結構 -->
+    <div id="game-over-screen">
         <div id="game-over-text">特訓結束</div>
         <div id="game-result-details"></div>
-        <div id="restart-hint">點擊畫面重新挑戰</div>
+        <button id="btn-reload" onclick="forceReloadGame()">重新挑戰 (魔力重整)</button>
     </div>
 
     <canvas id="blend-canvas" width="80" height="60" style="display:none;"></canvas>
@@ -540,26 +554,14 @@
             gameOverScreen.style.display = 'flex';
         }
 
+        // 【新增物理保險機制】：點擊按鈕直接調用系統底層重整，100% 釋放相機控制權
+        function forceReloadGame() {
+            window.location.reload(true);
+        }
+
         function resetGame() {
-            scoreSuccess = 0; scoreFailed = 0; totalFireballs = 0;
-            isGameOver = false; gameStarted = false; countdownNumber = 3; nextRequiredPoint = 0;
-            ritualOpacity = 1.0; startCtx.globalAlpha = 1.0;
-            
-            wandTrail = []; fireballs = []; eyeFireParticles = []; explosions = [];
-            mouthReadyToFire = true; lastFrameData = null; fireCooldown = 0;
-            
-            countdownOverlay.innerText = "3";
-            document.getElementById('txt-success').innerText = "0";
-            document.getElementById('txt-failed').innerText = "0";
-            document.getElementById('txt-total').innerText = "0";
-            gameOverScreen.style.display = 'none';
-            document.getElementById('start-prompt').style.display = 'block';
-            
-            gameState = 'cover';
-            startScreen.style.opacity = "1"; startScreen.style.display = 'flex';
-            document.getElementById('instruction').style.display = 'none';
-            document.getElementById('scoreboard').style.display = 'none';
-            generatePentagramPoints();
+            // 保留傳統重置邏輯作為備用
+            window.location.reload();
         }
 
         resizeCanvases();
