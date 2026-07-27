@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Kinetic Sorcery - 巫師射線特訓</title>
+    
+    <!-- Google Fonts 史詩級魔法風格字型 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap" rel="stylesheet">
+    
+    <!-- 引入高效率 MediaPipe Face Mesh 與 顏色追蹤庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tracking.js/1.1.3/tracking-min.js"></script>
+
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'PingFang TC', sans-serif; }
+        
+        /* 相機全螢幕背景 */
+        #webcam { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; transform: scaleX(-1); }
+        
+        /* 特效主畫布 */
+        #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+        
+        /* 初始主畫面 Cover 層 */
+        #start-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10;
+            background-color: #000; display: flex; flex-direction: column; justify-content: center; align-items: center;
+            transition: opacity 0.5s ease;
+        }
+        #start-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 11; }
+        #start-ui { position: relative; z-index: 12; text-align: center; pointer-events: none; width: 100%; height: 100%; }
+        #start-prompt { 
+            position: absolute; left: 50%; top: 61%; transform: translate(-50%, -50%); width: 100%;
+            font-size: clamp(13px, 2.2vh, 20px); color: #ffd700; text-shadow: 0 0 8px #ff4500, 0 0 15px #ff0000; 
+            animation: pulseGlow 2s infinite ease-in-out; font-weight: bold; letter-spacing: 3px; margin: 0;
+        }
+
+        @keyframes pulseGlow { 0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(0.97); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.03); } }
+
+        /* 引導提示 */
+        #instruction { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 3; background: rgba(0,0,0,0.75); color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #ff4500; text-align: center; box-shadow: 0 0 15px rgba(255, 69, 0, 0.4); display: none; }
+        
+        /* 計數器 */
+        #scoreboard { position: absolute; bottom: 20px; right: 20px; z-index: 3; background: rgba(0,0,0,0.8); color: #fff; padding: 15px; border-radius: 12px; border: 2px solid #00d2ff; font-weight: bold; font-size: 16px; line-height: 1.6; display: none; }
+        .success { color: #00d2ff; }
+        .failed { color: #ff4500; }
+
+        #countdown-overlay {
+            display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 5; font-family: 'Cinzel Decorative', Georgia, serif; font-size: 120px; font-weight: bold;
+            color: #ffd700; text-shadow: 0 0 30px #ff4500, 0 0 60px #ff0000; pointer-events: none;
+        }
+
+        /* 結算與退出畫面 */
+        #game-over-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 4; background: rgba(0, 0, 0, 0.85); flex-direction: column; justify-content: center; align-items: center; text-align: center; cursor: pointer; }
+        #game-over-text { font-size: 54px; font-weight: bold; margin-bottom: 20px; letter-spacing: 2px; }
+        #game-result-details { color: #fff; font-size: 22px; margin-bottom: 30px; line-height: 1.8; }
+        #restart-hint { color: #aaaaaa; font-size: 18px; animation: blink 1.5s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen">
+        <canvas id="start-canvas"></canvas>
+        <div id="start-ui">
+            <div id="start-prompt">─ 點擊螢幕 喚醒魔杖 ─</div>
+        </div>
+    </div>
+
+    <!-- 實時鏡頭（隱藏起來，改由 Canvas 統一繪製以進行鏡頭防拉伸） -->
+    <video id="webcam" width="640" height="480" autoplay loop muted playsinline style="display:none;"></video>
+    
+    <!-- 遊戲主畫布 -->
+    <canvas id="game-canvas"></canvas>
+
+    <div id="countdown-overlay">3</div>
+
+    <div id="instruction">
+        <strong id="ritual-title" style="color: #ffd700;">結界啟動中...</strong><br>
+        <span id="ritual-desc" style="font-size: 13px;">請用手指在圓圈內滑過藍色發光點，一筆畫畫出五芒星！</span>
+    </div>
+
+    <div id="scoreboard">
+        <div>成功點破：<span id="txt-success" class="success">0</span> 次</div>
+        <div>飛離防線：<span id="txt-failed" class="failed">0</span> 次</div>
+        <div style="border-top: 1px solid #444; margin-top: 5px; font-size: 13px; color: #aaa;">總火球數：<span id="txt-total">0</span> / 10</div>
+    </div>
+
+    <div id="game-over-screen" onclick="resetGame()">
+        <div id="game-over-text">特訓結束</div>
+        <div id="game-result-details"></div>
+        <div id="restart-hint">點擊畫面重新挑戰</div>
+    </div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const startScreen = document.getElementById('start-screen');
+        const startCanvas = document.getElementById('start-canvas');
+        const startCtx = startCanvas.getContext('2d');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const countdownOverlay = document.getElementById('countdown-overlay');
+
+        let gameStarted = false;
+        let scoreSuccess = 0;
+        let scoreFailed = 0;
+        let totalFireballs = 0; // 當前累積生成的火球總數，達到10顆即結束
+        let isGameOver = false;
+
+        let gameState = 'cover'; 
+        let countdownNumber = 3;
+
+        // 火球陣列 (支援畫面上有多顆慢速火球動態飛舞)
+        let fireballs = [];
+        let crosshair = { x: 0, y: 0, targetX: 0, targetY: 0, rotation: 0, currentSize: 35, hasTracking: false };
+        let explosions = []; 
+        let coronaParticles = [];
+        let eyeFireParticles = []; // 眼睛火焰粒子陣列
+        
+        let magicCircleImg = new Image();
+        let bg1Img = new Image();
+        let circleRotation = 0;
+        let bg1Rotation = 0;
+        let ritualOpacity = 1.0; 
+
+        magicCircleImg.src = "bg.png"; 
+        bg1Img.src = "bg-1.png";
+
+        let pentagramPoints = []; 
+        let nextRequiredPoint = 0; 
+        let wandTrail = []; 
+
+        // 人臉點位快取 (鏡像調整)
+        let faceFeatures = { leftEye: null, rightEye: null, mouthOpen: false, mouthPos: null };
+        let mouthReadyToFire = true; // 確保張一次嘴只吐出一顆，不會連續暴噴
+
+        function resizeCanvases() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            startCanvas.width = window.innerWidth;
+            startCanvas.height = window.innerHeight;
+            generatePentagramPoints();
+        }
+        window.addEventListener('resize', resizeCanvases);
+
+        function generatePentagramPoints() {
+            let centerX = startCanvas.width / 2;
+            let minDim = Math.min(startCanvas.width, startCanvas.height);
+            let circleCenterY = startCanvas.height * 0.34;
+            let radius = minDim * 0.26; 
+
+            pentagramPoints = [];
+            let drawOrderAngles = [ -Math.PI/2, Math.PI*0.7, -Math.PI*0.9, Math.PI*0.3, Math.PI*0.1 ];
+            for(let i=0; i<5; i++) {
+                let angle = drawOrderAngles[i];
+                pentagramPoints.push({ x: centerX + Math.cos(angle) * radius, y: circleCenterY + Math.sin(angle) * radius, activated: false });
+            }
+        }
+
+        // 手指劃五芒星處理
+        function handleTouchMove(e) {
+            if (gameState !== 'drawing') return;
+            e.preventDefault();
+            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            wandTrail.push({ x: clientX, y: clientY });
+            if (wandTrail.length > 30) wandTrail.shift();
+
+            let targetPt = pentagramPoints[nextRequiredPoint];
+            if (targetPt) {
+                let dist = Math.hypot(clientX - targetPt.x, clientY - targetPt.y);
+                if (dist < 40) { 
+                    targetPt.activated = true;
+                    nextRequiredPoint++;
+                    if (nextRequiredPoint >= 5) gameState = 'success_anim';
+                }
+            }
+        }
+
+        startScreen.addEventListener('mousedown', (e) => {
+            if(gameState === 'cover') { gameState = 'drawing'; document.getElementById('start-prompt').style.display = 'none'; document.getElementById('instruction').style.display = 'block'; }
+        });
+        startScreen.addEventListener('mousemove', handleTouchMove);
+        startScreen.addEventListener('touchstart', (e) => {
+            if(gameState === 'cover') { gameState = 'drawing'; document.getElementById('start-prompt').style.display = 'none'; document.getElementById('instruction').style.display = 'block'; }
+        }, { passive: false });
+        startScreen.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+        function updateStartScreen() {
+            if (gameStarted && gameState === 'playing') return;
+            if (startCanvas.width !== window.innerWidth || startCanvas.height !== window.innerHeight) resizeCanvases();
+            
+            startCtx.fillStyle = '#000000';
+            startCtx.fillRect(0, 0, startCanvas.width, startCanvas.height);
+
+            let centerX = startCanvas.width / 2;
+            let minDim = Math.min(startCanvas.width, startCanvas.height);
+            let circleCenterY = startCanvas.height * 0.34;
+
+            startCtx.save();
+            startCtx.globalAlpha = ritualOpacity;
+
+            if (gameState === 'cover' || gameState === 'success_anim') {
+                if (coronaParticles.length < 120) {
+                    let angle = Math.random() * Math.PI * 2;
+                    let speed = Math.random() * 2 + 1.5; 
+                    coronaParticles.push({
+                        x: centerX + Math.cos(angle) * (minDim * 0.25), y: circleCenterY + Math.sin(angle) * (minDim * 0.25),
+                        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                        life: Math.random() * 30 + 20, maxLife: 50, size: Math.random() * 25 + 15
+                    });
+                }
+                startCtx.save();
+                startCtx.globalCompositeOperation = 'screen';
+                for (let i = coronaParticles.length - 1; i >= 0; i--) {
+                    let p = coronaParticles[i]; p.x += p.vx; p.y += p.vy; p.life--;
+                    if (p.life <= 0) { coronaParticles.splice(i, 1); continue; }
+                    let ratio = p.life / p.maxLife;
+                    let grad = startCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+                    grad.addColorStop(0, 'rgba(255, 230, 150, ' + ratio + ')');
+                    grad.addColorStop(0.3, 'rgba(255, 90, 0, ' + ratio * 0.8 + ')');
+                    grad.addColorStop(1, 'rgba(0,0,0,0)');
+                    startCtx.beginPath(); startCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    startCtx.fillStyle = grad; startCtx.fill();
+                }
+                startCtx.restore();
+            }
+
+            let fixedSize = minDim * 0.58;
+
+            if (gameState === 'cover') {
+                startCtx.save(); startCtx.translate(centerX, circleCenterY); circleRotation += 0.004; startCtx.rotate(circleRotation);
+                if (magicCircleImg.complete) startCtx.drawImage(magicCircleImg, -fixedSize / 2, -fixedSize / 2, fixedSize, fixedSize);
+                startCtx.restore();
+            } 
+            else if (gameState === 'drawing') {
+                startCtx.save(); startCtx.translate(centerX, circleCenterY); bg1Rotation -= 0.002; startCtx.rotate(bg1Rotation);
+                if (bg1Img.complete) startCtx.drawImage(bg1Img, -fixedSize / 2, -fixedSize / 2, fixedSize, fixedSize);
+                startCtx.restore();
+
+                if (wandTrail.length > 1) {
+                    startCtx.save();
+                    startCtx.strokeStyle = 'rgba(0, 210, 255, 0.4)'; startCtx.lineWidth = 8; startCtx.lineCap = 'round'; startCtx.lineJoin = 'round';
+                    startCtx.beginPath(); startCtx.moveTo(wandTrail[0].x, wandTrail[0].y);
+                    for(let k=1; k<wandTrail.length; k++) startCtx.lineTo(wandTrail[k].x, wandTrail[k].y);
+                    startCtx.stroke();
+                    startCtx.strokeStyle = '#ffffff'; startCtx.lineWidth = 3;
+                    startCtx.beginPath(); startCtx.moveTo(wandTrail[0].x, wandTrail[0].y);
+                    for(let k=1; k<wandTrail.length; k++) startCtx.lineTo(wandTrail[k].x, wandTrail[k].y);
+                    startCtx.stroke(); startCtx.restore();
+                }
+
+                pentagramPoints.forEach((pt, index) => {
+                    startCtx.save();
+                    let isCurrent = (index === nextRequiredPoint);
+                    if (pt.activated) {
+                        startCtx.fillStyle = '#00ffff'; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 9, 0, Math.PI * 2); startCtx.fill();
+                    } else if (isCurrent) {
+                        let breath = Math.sin(Date.now() * 0.008) * 2;
+                        startCtx.fillStyle = '#0077ff'; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 11 + breath, 0, Math.PI * 2); startCtx.fill();
+                        startCtx.strokeStyle = '#ffffff'; startCtx.lineWidth = 1.5; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 14 + breath, 0, Math.PI * 2); startCtx.stroke();
+                    } else {
+                        startCtx.fillStyle = 'rgba(0, 119, 255, 0.3)'; startCtx.beginPath(); startCtx.arc(pt.x, pt.y, 8, 0, Math.PI * 2); startCtx.fill();
+                    }
+                    startCtx.restore();
+                });
+            } 
+            else if (gameState === 'success_anim') {
+                circleRotation += 0.06; bg1Rotation -= 0.04;   
+                startCtx.save(); startCtx.translate(centerX, circleCenterY); startCtx.rotate(bg1Rotation);
+                if (bg1Img.complete) startCtx.drawImage(bg1Img, -fixedSize / 2, -fixedSize / 2, fixedSize, fixedSize);
+                startCtx.restore();
+
+                startCtx.save(); startCtx.translate(centerX, circleCenterY); startCtx.rotate(circleRotation);
+                startCtx.shadowBlur = 40; startCtx.shadowColor = '#ffd700'; 
+                if (magicCircleImg.complete) startCtx.drawImage(magicCircleImg, -fixedSize / 2, -fixedSize / 2, fixedSize, fixedSize);
+                startCtx.restore();
+
+                ritualOpacity -= 0.02;
+                if (ritualOpacity <= 0) {
+                    ritualOpacity = 0; startScreen.style.display = 'none';
+                    triggerCountdown(); 
+                }
+            }
+
+            if (gameState === 'cover' || gameState === 'drawing') {
+                startCtx.save();
+                let dynamicFontSize = Math.min(36, Math.max(18, minDim * 0.062));
+                startCtx.font = `bold ${dynamicFontSize}px 'Cinzel Decorative', Georgia, serif`;
+                startCtx.textAlign = "center"; startCtx.textBaseline = "middle"; startCtx.letterSpacing = "2px";
+                startCtx.lineWidth = 2; startCtx.strokeStyle = "#000000";
+                startCtx.strokeText("KINETIC SORCERY", centerX, startCanvas.height * 0.71);
+                startCtx.fillStyle = "#ffcc00";
+                startCtx.fillText("KINETIC SORCERY", centerX, startCanvas.height * 0.71);
+                startCtx.restore();
+            }
+
+            startCtx.restore();
+            requestAnimationFrame(updateStartScreen);
+        }
+
+        function triggerCountdown() {
+            gameState = 'countdown';
+            countdownOverlay.style.display = 'block';
+            document.getElementById('ritual-title').innerText = "深呼吸準備：喚醒眼眸聖火";
+            document.getElementById('ritual-title').style.color = "#ffd700";
+            document.getElementById('ritual-desc').innerText = "張開嘴巴即可緩慢吐出火球，揮動魔杖點破它們！";
+            
+            initFaceMeshAndTracker();
+
+            let timer = setInterval(() => {
+                countdownNumber--;
+                if (countdownNumber > 0) {
+                    countdownOverlay.innerText = countdownNumber;
+                } else {
+                    clearInterval(timer);
+                    countdownOverlay.style.display = 'none';
+                    document.getElementById('scoreboard').style.display = 'block';
+                    document.getElementById('ritual-title').innerText = "特訓進行中：吐納火球防禦線";
+                    document.getElementById('ritual-title').style.color = "#ff4500";
+                    document.getElementById('ritual-desc').innerHTML = '張嘴射出火球，揮動<span style="color:#ff3333;font-weight:bold;">紅色魔杖</span>精準將其點破！';
+                    gameState = 'playing';
+                    gameStarted = true;
+                }
+            }, 1000);
+        }
+
+        // 雙追蹤器初始化 (MediaPipe + tracking.js)
+        let trackingInitialized = false;
+        function initFaceMeshAndTracker() {
+            if (trackingInitialized) return;
+            trackingInitialized = true;
+
+            // 1. 初始化 MediaPipe Face Mesh
+            const faceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@face-mesh/${file}` || `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+            });
+            faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+            faceMesh.onResults(onFaceResults);
+
+            // 2. 啟動鏡頭硬體串流
+            const camera = new Camera(video, {
+                onFrame: async () => { await faceMesh.send({ image: video }); },
+                width: 640, height: 480
+            });
+            camera.start();
+
+            // 3. 啟動魔杖紅色追蹤
+            tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
+                return (r > 155 && g < 60 && b < 60); 
+            });
+            const colorTracker = new tracking.ColorTracker(['magic_red']);
+            colorTracker.setMinDimension(6);
+
+            colorTracker.on('track', function(event) {
+                if (isGameOver || event.data.length === 0 || gameState !== 'playing') {
+                    crosshair.hasTracking = false;
+                    return;
+                }
+                let validTarget = null;
+                for (let i = 0; i < event.data.length; i++) {
+                    let rect = event.data[i];
+                    let aspect = rect.width / rect.height;
+                    if (aspect > 0.6 && aspect < 1.5 && rect.width < (canvas.width * 0.4)) {
+                        validTarget = rect;
+                        break;
+                    }
+                }
+                if (validTarget) {
+                    crosshair.hasTracking = true;
+                    // 因為相機翻轉，X軸做鏡像鏡射對齊
+                    crosshair.targetX = canvas.width - (validTarget.x + validTarget.width / 2) * (canvas.width / 640);
+                    crosshair.targetY = (validTarget.y + validTarget.height / 2) * (canvas.height / 480);
+                } else {
+                    crosshair.hasTracking = false;
+                }
+            });
+
+            tracking.track('#webcam', colorTracker);
+        }
+
+        // 處理人臉五官節點資料
+        function onFaceResults(results) {
+            if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0 || isGameOver) {
+                faceFeatures.leftEye = null; faceFeatures.rightEye = null;
+                return;
+            }
+
+            const landmarks = results.multiFaceLandmarks[0];
+            
+            // 抓取左右眼核心特徵點並進行視域像素映射 (考慮 scaleX 鏡像反轉)
+            let le = landmarks[159]; // 左眼上瞼中心
+            let re = landmarks[386]; // 右眼上瞼中心
+            
+            faceFeatures.leftEye = { x: (1 - le.x) * canvas.width, y: le.y * canvas.height };
+            faceFeatures.rightEye = { x: (1 - re.x) * canvas.width, y: re.y * canvas.height };
+
+            // 嘴唇核心點：上下唇內側距離 (點13與點14)
+            let upperLip = landmarks[13];
+            let lowerLip = landmarks[14];
+            let mouthDist = Math.abs(upperLip.y - lowerLip.y);
+            
+            faceFeatures.mouthPos = { x: (1 - upperLip.x) * canvas.width, y: ((upperLip.y + lowerLip.y)/2) * canvas.height };
+
+            // 判斷張嘴臨界點值 (0.045 為標準物理比例特徵值)
+            if (mouthDist > 0.045) {
+                if (mouthReadyToFire && gameState === 'playing' && totalFireballs < 10) {
+                    spawnMouthFireball(faceFeatures.mouthPos.x, faceFeatures.mouthPos.y);
+                    mouthReadyToFire = false; // 閉嘴前鎖定發射
+                }
+            } else if (mouthDist < 0.025) {
+                mouthReadyToFire = true; // 嘴巴閉合，解鎖下一次發射權限
+            }
+        }
+
+        // 從嘴巴位置生成一顆慢速飛離的火球
+        function spawnMouthFireball(startX, startY) {
+            totalFireballs++;
+            document.getElementById('txt-total').innerText = totalFireballs;
+
+            // 火球隨機拋物線方向慢速飛離
+            let angle = -Math.PI/2 + (Math.random() - 0.5) * 1.2; 
+            fireballs.push({
+                x: startX, y: startY, size: 10,
+                speedX: Math.cos(angle) * 1.5,
+                speedY: Math.sin(angle) * 1.5,
+                active: true
+            });
+        }
+
+        function createExplosion(x, y) {
+            for (let i = 0; i < 18; i++) {
+                explosions.push({
+                    x: x, y: y, vx: (Math.random() - 0.5) * 10, vy: (Math.random() - 0.5) * 10,
+                    size: Math.random() * 5 + 3, alpha: 1,
+                    color: `hsl(${Math.random() * 30 + 12}, 100%, 60%)`
+                });
+            }
+        }
+
+        // 畫出熊熊火焰粒子特效
+        function handleEyeFire(eye) {
+            if (!eye) return;
+            // 每一影格在雙眼中央噴發3顆向上燃燒的微粒子
+            for(let i=0; i<3; i++) {
+                eyeFireParticles.push({
+                    x: eye.x + (Math.random() - 0.5) * 12,
+                    y: eye.y + (Math.random() - 0.5) * 8,
+                    vx: (Math.random() - 0.5) * 1.5,
+                    vy: -Math.random() * 3.5 - 1.5,
+                    life: 25, maxLife: 25,
+                    size: Math.random() * 12 + 6
+                });
+            }
+        }
+
+        function drawMagicCrosshair(x, y) {
+            crosshair.rotation += 0.04;
+            ctx.save(); ctx.translate(x, y); ctx.rotate(crosshair.rotation);
+            ctx.lineWidth = 2.5; ctx.strokeStyle = '#00d2ff';
+            ctx.shadowBlur = 6; ctx.shadowColor = '#00d2ff';
+            ctx.beginPath(); ctx.arc(0, 0, 32, 0, Math.PI * 2); ctx.setLineDash([6, 6]); ctx.stroke();
+            ctx.restore();
+        }
+
+        // 主遊戲迴圈
+        function gameLoop() {
+            if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) resizeCanvases();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 實時在底層畫出倒置的相機影像，達成無縫防拉伸背景
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                ctx.save();
+                ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                ctx.restore();
+            }
+
+            if (gameStarted && !isGameOver) {
+                // 1. 物理插值平滑處理魔杖座標
+                crosshair.x += (crosshair.targetX - crosshair.x) * 0.45;
+                crosshair.y += (crosshair.targetY - crosshair.y) * 0.45;
+
+                // 2. 處理雙眼熊熊火焰粒子噴發與渲染
+                handleEyeFire(faceFeatures.leftEye);
+                handleEyeFire(faceFeatures.rightEye);
+
+                ctx.save();
+                ctx.globalCompositeOperation = 'screen';
+                for (let i = eyeFireParticles.length - 1; i >= 0; i--) {
+                    let p = eyeFireParticles[i]; p.x += p.vx; p.y += p.vy; p.life--;
+                    if (p.life <= 0) { eyeFireParticles.splice(i, 1); continue; }
+                    let ratio = p.life / p.maxLife;
+                    let grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+                    grad.addColorStop(0, 'rgba(255, 240, 180, ' + ratio + ')');
+                    grad.addColorStop(0.2, 'rgba(255, 110, 0, ' + ratio * 0.8 + ')');
+                    grad.addColorStop(1, 'rgba(255,0,0,0)');
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fillStyle = grad; ctx.fill();
+                }
+                ctx.restore();
+
+                // 3. 處理點破爆炸粒子
+                for (let i = explosions.length - 1; i >= 0; i--) {
+                    let p = explosions[i]; p.x += p.vx; p.y += p.vy; p.alpha -= 0.04;
+                    if (p.alpha <= 0) { explosions.splice(i, 1); continue; }
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fillStyle = p.color; ctx.globalAlpha = p.alpha; ctx.fill();
+                }
+                ctx.globalAlpha = 1.0;
+
+                // 4. 動態更新與緩慢飛離火球渲染
+                for (let i = fireballs.length - 1; i >= 0; i--) {
+                    let fb = fireballs[i];
+                    if (!fb.active) { fireballs.splice(i, 1); continue; }
+
+                    // 火球採用極慢的等速線性飛離，讓玩家容易追蹤點破
+                    fb.x += fb.speedX;
+                    fb.y += fb.speedY;
+                    fb.size += 0.25; // 體積微微變大增加空間感
+
+                    ctx.save();
+                    ctx.beginPath();
+                    let grad = ctx.createRadialGradient(fb.x, fb.y, fb.size*0.1, fb.x, fb.y, fb.size);
+                    grad.addColorStop(0, '#ffffff'); grad.addColorStop(0.3, '#ffcc00'); grad.addColorStop(0.6, '#ff4500'); grad.addColorStop(1, 'rgba(255,69,0,0)');
+                    ctx.fillStyle = grad; ctx.arc(fb.x, fb.y, fb.size, 0, Math.PI * 2); ctx.fill();
+                    ctx.restore();
+
+                    // 魔杖準星點破判定 (魔杖紅色光點移到火球範圍內)
+                    if (crosshair.hasTracking) {
+                        let distance = Math.hypot(crosshair.x - fb.x, crosshair.y - fb.y);
+                        if (distance < (fb.size * 0.85 + 25)) {
+                            scoreSuccess++;
+                            document.getElementById('txt-success').innerText = scoreSuccess;
+                            createExplosion(fb.x, fb.y);
+                            fb.active = false;
+                            checkGameCompletion();
+                        }
+                    }
+
+                    // 超出防線邊界判定 (飛出螢幕四周)
+                    if (fb.active && (fb.x < -100 || fb.x > canvas.width + 100 || fb.y < -100 || fb.y > canvas.height + 100)) {
+                        scoreFailed++;
+                        document.getElementById('txt-failed').innerText = scoreFailed;
+                        fb.active = false;
+                        checkGameCompletion();
+                    }
+                }
+
+                // 渲染魔杖準星
+                if (crosshair.hasTracking) {
+                    drawMagicCrosshair(crosshair.x, crosshair.y);
+                }
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 檢查背景加總是否達到 10 顆判定結束
+        function checkGameCompletion() {
+            let currentTotal = scoreSuccess + scoreFailed;
+            if (currentTotal >= 10 || totalFireballs >= 10 && fireballs.filter(f => f.active).length === 0) {
+                // 為了防範漏算，強制以真實加總為歸屬
+                triggerGameFinished();
+            }
+        }
+
+        function triggerGameFinished() {
+            isGameOver = true;
+            gameStarted = false;
+            
+            let details = document.getElementById('game-result-details');
+            let mainTxt = document.getElementById('game-over-text');
+            
+            details.innerHTML = `成功點破：<span style="color:#00d2ff; font-weight:bold;">${scoreSuccess}</span> 顆<br>防線漏接：<span style="color:#ff4500; font-weight:bold;">${scoreFailed}</span> 顆`;
+            
+            if (scoreSuccess >= 8) {
+                mainTxt.innerText = "特訓評價：大魔法師"; mainTxt.style.color = "#ffd700"; mainTxt.style.textShadow = "0 0 20px #ffd700";
+            } else if (scoreSuccess >= 5) {
+                mainTxt.innerText = "特訓評價：合格巫師"; mainTxt.style.color = "#00d2ff"; mainTxt.style.textShadow = "0 0 20px #00d2ff";
+            } else {
+                mainTxt.innerText = "特訓評價：魔法學徒"; mainTxt.style.color = "#ff3333"; mainTxt.style.textShadow = "0 0 20px #ff3333";
+            }
+            
+            gameOverScreen.style.display = 'flex';
+        }
+
+        function resetGame() {
+            scoreSuccess = 0; scoreFailed = 0; totalFireballs = 0;
+            isGameOver = false; gameStarted = false; countdownNumber = 3; nextRequiredPoint = 0;
+            ritualOpacity = 1.0; startCtx.globalAlpha = 1.0;
+            
+            wandTrail = []; fireballs = []; eyeFireParticles = []; explosions = [];
+            mouthReadyToFire = true;
+            
+            countdownOverlay.innerText = "3";
+            document.getElementById('txt-success').innerText = "0";
+            document.getElementById('txt-failed').innerText = "0";
+            document.getElementById('txt-total').innerText = "0";
+            gameOverScreen.style.display = 'none';
+            document.getElementById('start-prompt').style.display = 'block';
+            
+            gameState = 'cover';
+            startScreen.style.opacity = "1"; startScreen.style.display = 'flex';
+            document.getElementById('instruction').style.display = 'none';
+            document.getElementById('scoreboard').style.display = 'none';
+            generatePentagramPoints();
+        }
+
+        resizeCanvases();
+        updateStartScreen();
+        gameLoop();
+    </script>
+</body>
+</html>
