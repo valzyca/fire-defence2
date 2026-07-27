@@ -350,7 +350,7 @@
             tracking.track('#webcam', colorTracker);
         }
 
-        // 【黃金級座標解耦修正】：完美解決頭部左右平移時特效脫節飄移的硬傷
+        // 完美對齊座標系與自適應張嘴辨識算法
         function onFaceMeshResults(results) {
             if (isGameOver || !results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
                 liveLeftEye = null; liveRightEye = null; liveMouth = null;
@@ -377,14 +377,12 @@
                 offsetX = (canvas.width - scaleX) / 2;
             }
 
-            let pLeftEye = landmarks[468];  // 左瞳中心
-            let pRightEye = landmarks[473]; // 右瞳中心
+            let pLeftEye = landmarks[468];  
+            let pRightEye = landmarks[473]; 
             let pMouthTop = landmarks[13];
             let pMouthBottom = landmarks[14];
 
-            // 🛠️ 【核心算法重構】：
-            // 將邊界黑邊偏移量 `offsetX` 內置到鏡像矩陣（1 - p.x）的內部進行運算，徹底消除平移時的正負號偏置量（Offset Shift）。
-            // 同時因為 MediaPipe 物理座標與 CSS 鏡像方向相反，左瞳的數據必須渲染至右眼，反之亦然。這能強迫火焰在任意位置皆 100% 焊死在瞳孔上！
+            // 完美綁定瞳孔中心
             liveLeftEye = {
                 x: (1 - pLeftEye.x) * scaleX + offsetX,
                 y: pLeftEye.y * scaleY + offsetY
@@ -398,14 +396,22 @@
                 y: ((pMouthTop.y + pMouthBottom.y) / 2) * scaleY + offsetY
             };
 
-            let mouthDist = Math.abs(pMouthTop.y - pMouthBottom.y);
-            if (mouthDist > 0.038) { 
+            // 🛠️ 【動態自適應優化解鎖】：
+            // 實時計算雙眼的 3D 距離向量當作動態分母
+            let eyeDistance3D = Math.hypot(pLeftEye.x - pRightEye.x, pLeftEye.y - pRightEye.y, pLeftEye.z - pRightEye.z);
+            let mouthOpening3D = Math.hypot(pMouthTop.x - pMouthBottom.x, pMouthTop.y - pMouthBottom.y, pMouthTop.z - pMouthBottom.z);
+
+            // 透過 相對比例 (張嘴高度 / 雙眼距離) 進行閥值判斷。
+            // 這樣一來，不論你低頭造成多嚴重的視覺壓縮，相對比例永遠不變，100% 觸發吐火球！
+            let mouthRatio = mouthOpening3D / eyeDistance3D;
+
+            if (mouthRatio > 0.43) { // 動態張嘴相對閥值
                 if (mouthReadyToFire && gameState === 'playing' && totalFireballs < 10 && fireCooldown <= 0) {
                     spawnMouthFireball(liveMouth.x, liveMouth.y);
                     mouthReadyToFire = false;
                     fireCooldown = 20;
                 }
-            } else if (mouthDist < 0.018) {
+            } else if (mouthRatio < 0.20) {
                 mouthReadyToFire = true;
             }
         }
