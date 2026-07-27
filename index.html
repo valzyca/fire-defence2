@@ -33,13 +33,24 @@
             display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 40; 
             background: rgba(0, 0, 0, 0.85); flex-direction: column; justify-content: center; align-items: center; text-align: center; 
         }
-        #game-over-text { font-size: 46px; font-weight: bold; margin-bottom: 20px; letter-spacing: 2px; }
-        #game-result-details { color: #fff; font-size: 22px; margin-bottom: 35px; line-height: 1.8; }
         
-        /* 重新整理按鈕樣式 */
+        /* 修正：優化字級大小，使用 clamp 確保手機版不會切出螢幕兩側 */
+        #game-over-text { 
+            font-size: clamp(24px, 4.5vh, 32px); 
+            font-weight: bold; 
+            margin-bottom: 25px; 
+            letter-spacing: 1px; 
+            padding: 0 15px;
+            box-sizing: border-box;
+            width: 100%;
+        }
+        
+        #game-result-details { color: #fff; font-size: 20px; margin-bottom: 35px; line-height: 1.8; }
+        
+        /* 重新整理按鈕樣式優化 */
         #btn-reload {
             pointer-events: auto; background: linear-gradient(135deg, #ff4500 0%, #b30000 100%);
-            color: #fff; font-size: 18px; font-weight: bold; padding: 14px 36px; border-radius: 30px;
+            color: #fff; font-size: 18px; font-weight: bold; padding: 14px 44px; border-radius: 30px;
             border: 2px solid #ffd700; box-shadow: 0 0 15px rgba(255, 69, 0, 0.6);
             cursor: pointer; transition: all 0.2s ease; letter-spacing: 2px;
         }
@@ -71,11 +82,11 @@
         <div style="border-top: 1px solid #444; margin-top: 5px; font-size: 13px; color: #aaa;">總火球數：<span id="txt-total">0</span> / 10</div>
     </div>
 
-    <!-- 終極結算大屏：內嵌原生網頁重整功能結構 -->
+    <!-- 終極結算大屏：僅保留精簡後的重新挑戰文字 -->
     <div id="game-over-screen">
         <div id="game-over-text">特訓結束</div>
         <div id="game-result-details"></div>
-        <button id="btn-reload" onclick="forceReloadGame()">重新挑戰 (魔力重整)</button>
+        <button id="btn-reload" onclick="forceReloadGame()">重新挑戰</button>
     </div>
 
     <canvas id="blend-canvas" width="80" height="60" style="display:none;"></canvas>
@@ -554,14 +565,8 @@
             gameOverScreen.style.display = 'flex';
         }
 
-        // 【新增物理保險機制】：點擊按鈕直接調用系統底層重整，100% 釋放相機控制權
         function forceReloadGame() {
             window.location.reload(true);
-        }
-
-        function resetGame() {
-            // 保留傳統重置邏輯作為備用
-            window.location.reload();
         }
 
         resizeCanvases();
