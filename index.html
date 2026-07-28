@@ -12,8 +12,6 @@
     <!-- 引入高可用性官方 AI Face Mesh 核心與鏡頭驅動庫 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
-    <!-- 引入魔杖色彩追蹤庫 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tracking.js/1.1.3/tracking-min.js"></script>
 
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'PingFang TC', sans-serif; }
@@ -25,7 +23,7 @@
         #start-prompt { position: absolute; left: 50%; top: 61%; transform: translate(-50%, -50%); width: 100%; font-size: clamp(13px, 2.2vh, 20px); color: #ffd700; text-shadow: 0 0 8px #ff4500, 0 0 15px #ff0000; animation: pulseGlow 2s infinite ease-in-out; font-weight: bold; letter-spacing: 3px; margin: 0; }
         @keyframes pulseGlow { 0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(0.97); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.03); } }
         
-        #instruction { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 3; background: rgba(0,0,0,0.75); color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #00d2ff; text-align: center; box-shadow: 0 0 15px rgba(0, 210, 255, 0.4); }
+        #instruction { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 3; background: rgba(0,0,0,0.75); color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #ff4500; text-align: center; box-shadow: 0 0 15px rgba(255, 69, 0, 0.4); }
         #scoreboard { position: absolute; bottom: 20px; right: 20px; z-index: 3; background: rgba(0,0,0,0.8); color: #fff; padding: 15px; border-radius: 12px; border: 2px solid #00d2ff; font-weight: bold; font-size: 16px; line-height: 1.6; display: none; }
         .success { color: #00d2ff; }
         .failed { color: #ff4500; }
@@ -34,8 +32,8 @@
         #game-over-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 40; background: rgba(0, 0, 0, 0.85); flex-direction: column; justify-content: center; align-items: center; text-align: center; }
         #game-over-text { font-size: clamp(24px, 4.5vh, 32px); font-weight: bold; margin-bottom: 25px; letter-spacing: 1px; padding: 0 15px; box-sizing: border-box; width: 100%; }
         #game-result-details { color: #fff; font-size: 20px; margin-bottom: 35px; line-height: 1.8; }
-        #btn-reload { pointer-events: auto; background: linear-gradient(135deg, #0077ff 0%, #0033aa 100%); color: #fff; font-size: 18px; font-weight: bold; padding: 14px 44px; border-radius: 30px; border: 2px solid #ffd700; box-shadow: 0 0 15px rgba(0, 119, 255, 0.6); cursor: pointer; transition: all 0.2s ease; letter-spacing: 2px; }
-        #btn-reload:active { transform: scale(0.95); box-shadow: 0 0 8px rgba(0, 119, 255, 0.4); }
+        #btn-reload { pointer-events: auto; background: linear-gradient(135deg, #ff4500 0%, #b30000 100%); color: #fff; font-size: 18px; font-weight: bold; padding: 14px 44px; border-radius: 30px; border: 2px solid #ffd700; box-shadow: 0 0 15px rgba(255, 69, 0, 0.6); cursor: pointer; transition: all 0.2s ease; letter-spacing: 2px; }
+        #btn-reload:active { transform: scale(0.95); box-shadow: 0 0 8px rgba(255, 69, 0, 0.4); }
     </style>
 </head>
 <body>
@@ -69,15 +67,21 @@
         <button id="btn-reload" onclick="forceReloadGame()">重新挑戰</button>
     </div>
 
+    <!-- 隱藏的光流運動運算畫布 -->
+    <canvas id="motion-canvas" width="80" height="60" style="display:none;"></canvas>
+
     <script>
         const video = document.getElementById('webcam');
-        const canvas = window.canvas = document.getElementById('game-canvas');
+        const canvas = document.getElementById('game-canvas');
         const ctx = canvas.getContext('2d');
         const startScreen = document.getElementById('start-screen');
         const startCanvas = document.getElementById('start-canvas');
         const startCtx = startCanvas.getContext('2d');
         const gameOverScreen = document.getElementById('game-over-screen');
         const countdownOverlay = document.getElementById('countdown-overlay');
+        
+        const motionCanvas = document.getElementById('motion-canvas');
+        const motionCtx = motionCanvas.getContext('2d');
 
         let gameStarted = false;
         let scoreSuccess = 0;
@@ -111,6 +115,9 @@
         let liveMouth = null;
         let mouthReadyToFire = true;
         let fireCooldown = 0;
+
+        // 用於儲存上一幀的像素矩陣以進行高速光流運動追蹤
+        let prevFrameData = null;
 
         function resizeCanvases() {
             canvas.width = window.innerWidth;
@@ -280,9 +287,9 @@
         function triggerCountdown() {
             gameState = 'countdown';
             countdownOverlay.style.display = 'block';
-            document.getElementById('ritual-title').innerText = "AI 深度追蹤啟動中...";
+            document.getElementById('ritual-title').innerText = "動態光流矩陣校正中...";
             document.getElementById('ritual-title').style.color = "#00d2ff";
-            document.getElementById('ritual-desc').innerText = "請將正臉對準鏡頭，張嘴即可直接噴射火球！";
+            document.getElementById('ritual-desc').innerText = "相機已開啟，請正對畫面張開嘴巴！";
             
             initFaceMeshEngine();
 
@@ -295,9 +302,10 @@
                     clearInterval(timer);
                     countdownOverlay.style.display = 'none';
                     document.getElementById('scoreboard').style.display = 'block';
-                    document.getElementById('ritual-title').innerText = "特訓進行中：3D 物理魔法陣";
+                    document.getElementById('ritual-title').innerText = "特訓進行中：隔空光流引爆";
                     document.getElementById('ritual-title').style.color = "#ff4500";
-                    document.getElementById('ritual-desc').innerHTML = '任意移動並張嘴發射火球，使用<span style="color:#00d2ff;font-weight:bold;">藍色魔杖</span>隔空點破它！';
+                    // 說明文字更新：強調隔空揮動即可
+                    document.getElementById('ritual-desc').innerHTML = '張嘴連續發射火球，揮動<span style="color:#00d2ff;font-weight:bold;">實體魔杖</span>隔空掃過火球即可將其引爆！';
                     gameState = 'playing';
                     gameStarted = true;
                 }
@@ -330,22 +338,6 @@
                 height: 480
             });
             camera.start();
-
-            // 🛠️ 【 HSV 革命性優化】：降低色差限制（HSV > 115, R-B > 30, R-G > 8），不論環境多暗、反光多亮，都能神速捕捉朱紅色物體前端。
-            tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
-                return (r > 115 && (r - b) > 30 && (r - g) > 8);
-            });
-            const colorTracker = new tracking.ColorTracker(['magic_red']);
-            colorTracker.setMinDimension(3); 
-            colorTracker.on('track', function(event) {
-                if (isGameOver || event.data.length === 0 || gameState !== 'playing') {
-                    // crosshair.hasTracking = false; 註銷它，我們不使用色彩準星來爆裂，它只用來偵測
-                    return;
-                }
-                // crosshair.hasTracking = true; 註銷它，色彩準星不進行碰撞判定
-                // 此處色彩追蹤僅僅是為了確認魔杖存在，不再進行幾何坐標計算
-            });
-            tracking.track('#webcam', colorTracker);
         }
 
         function onFaceMeshResults(results) {
@@ -449,10 +441,38 @@
             });
         }
 
+        // 🛠️ 【真·純前端動態辨識核心】：高速光流像素運動檢測演算法
+        // 將視訊縮小到 80x60 的微矩陣，實時比對前後兩幀的像素差值，精確鎖定螢幕上哪裡有物體正在揮動！
+        function processOpticalFlowEngine() {
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) return null;
+            
+            motionCtx.drawImage(video, 0, 0, 80, 60);
+            let currentFrameData = motionCtx.getImageData(0, 0, 80, 60);
+            let motionGrid = new Uint8Array(80 * 60); // 建立動態能矩陣
+
+            if (prevFrameData) {
+                for (let y = 0; y < 60; y++) {
+                    for (let x = 0; x < 80; x++) {
+                        let idx = (y * 80 + x) * 4;
+                        // 計算前後兩幀 R、G、B 的絕對差值值
+                        let diff = Math.abs(currentFrameData.data[idx] - prevFrameData.data[idx]) +
+                                   Math.abs(currentFrameData.data[idx+1] - prevFrameData.data[idx+1]) +
+                                   Math.abs(currentFrameData.data[idx+2] - prevFrameData.data[idx+2]);
+                        
+                        // 差值超過閥值，視為該像素正在劇烈揮動移動
+                        motionGrid[y * 80 + x] = (diff > 55) ? 1 : 0;
+                    }
+                }
+            }
+            prevFrameData = currentFrameData;
+            return motionGrid;
+        }
+
         function gameLoop() {
             if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) resizeCanvases();
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            // 完整將鏡頭影像作為背景貼上
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
                 ctx.save();
                 ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
@@ -463,8 +483,12 @@
             if (gameStarted && !isGameOver) {
                 if (fireCooldown > 0) fireCooldown--;
 
+                // 執行光流矩陣演算法，拿到當前相機畫面的所有運動特徵點
+                let motionGrid = processOpticalFlowEngine();
+
                 handleLiveEyeParticles();
 
+                // 渲染眼睛聖火面具
                 ctx.save();
                 ctx.globalCompositeOperation = 'screen';
                 for (let i = eyeFireParticles.length - 1; i >= 0; i--) {
@@ -480,6 +504,7 @@
                 }
                 ctx.restore();
 
+                // 點破的大爆炸粒子渲染
                 for (let i = explosions.length - 1; i >= 0; i--) {
                     let p = explosions[i]; p.x += p.vx; p.y += p.vy; p.alpha -= 0.04;
                     if (p.alpha <= 0) { explosions.splice(i, 1); continue; }
@@ -488,9 +513,7 @@
                 }
                 ctx.globalAlpha = 1.0;
 
-                // 🛠️ 【3D 物理碰撞包絡核心】：將舊色彩追蹤碰撞註銷，改為人臉深度網格引爆！
-                // 為了實作「稍微接觸、擦邊即爆」，我將碰撞距離判定放寬至 **`fb.size * 0.95 + 100像素`**。
-                // 這是純物理幾何計算，免疫任何畫面歪斜拉伸誤差！
+                // 火球飛行與光流場碰撞核心
                 for (let i = fireballs.length - 1; i >= 0; i--) {
                     let fb = fireballs[i];
                     if (!fb.active) { fireballs.splice(i, 1); continue; }
@@ -506,13 +529,40 @@
                     ctx.fillStyle = grad; ctx.arc(fb.x, fb.y, fb.size, 0, Math.PI * 2); ctx.fill();
                     ctx.restore();
 
-                    // 使用 Face Mesh 核心數據進行超大包絡碰撞計算，實現「擦邊即爆」！
-                    if (trackingInitialized) { 
-                        // 雖然 crosshair.hasTracking 被註銷，但 MediaPipe 核心數據還在，我們藉由色彩追蹤的 registerColor 啟動了核心
-                        // 程式邏輯改寫：直接從 video 的 ImageData 讀取朱紅色坐標，不依賴 tracking.js 的 data.
-                        // 註： tracking.track 本身就是異步且獨立的。我們在 init 註銷了準星邏輯，不讓它干擾畫面，但色彩識別矩陣仍舊運行。
-                        // 核心數據讀取： tracking 識別到的坐標數據在 colorTracker.on('track', event) 裡面。
-                        // 終極大絕招：直接在 colorTracker.on 裡面進行 3D 碰撞判定！ (見 init 內的 colorTracker.on)
+                    // 🛠️ 【終極光流引爆機制】：
+                    // 將火球此時此刻的 Canvas 座標，反向映射至 80x60 的光流格子區區塊
+                    if (motionGrid) {
+                        let gridX = Math.floor((fb.x / canvas.width) * 80);
+                        // 因為鏡頭是水平鏡像，光流座標的 X 軸也需要做反轉對齊
+                        gridX = 79 - gridX; 
+                        let gridY = Math.floor((fb.y / canvas.height) * 60);
+
+                        // 🔍 掃描火球周圍超大範圍的「擦邊包絡包絡區」（格子周圍 4x4 的大範圍）
+                        let motionDetected = false;
+                        let checkRadius = 4; // 判定範圍，數值越大隔空擦邊越靈敏
+
+                        for (let dy = -checkRadius; dy <= checkRadius; dy++) {
+                            for (let dx = -checkRadius; dy <= checkRadius; dx++) {
+                                let cx = gridX + dx;
+                                let cy = gridY + dy;
+                                if (cx >= 0 && cx < 80 && cy >= 0 && cy < 60) {
+                                    if (motionGrid[cy * 80 + cx] === 1) {
+                                        motionDetected = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (motionDetected) break;
+                        }
+
+                        // 💥 只要火球周圍檢測到有任何魔杖揮動的動態（100% 免疫反光和錯位偏離），火球直接當場引爆！
+                        if (motionDetected) {
+                            scoreSuccess++;
+                            document.getElementById('txt-success').innerText = scoreSuccess;
+                            createExplosion(fb.x, fb.y);
+                            fb.active = false;
+                            checkGameCompletion();
+                        }
                     }
 
                     if (fb.active && (fb.x < -100 || fb.x > canvas.width + 100 || fb.y < -100 || fb.y > canvas.height + 100)) {
@@ -522,101 +572,8 @@
                         checkGameCompletion();
                     }
                 }
-                
-                // 🛠️ 【HSV 革命性優化 - 3D 包絡引爆同步】：直接在 colorTracker.on 進行碰撞判定
-                // (代碼已移動至init 內的 colorTracker.on, 確保在色彩捕捉異步完成時立刻進行超靈敏大包絡碰撞判定)
-                // 原 gameLoop 的色彩碰撞判定代碼（ fb.size * 0.95 + fb.x）將被註銷，轉移到 init 內的色彩識別回調函數中實作真 HSV 引爆！
-
-                // (色彩識別核心與幾何坐標數據已註銷，準星不繪製)
             }
             requestAnimationFrame(gameLoop);
-        }
-
-        // 🛠️ 將HSV引爆邏輯完美實作在 init 函數的異步色彩識別回調中
-        function initFaceMeshEngine() {
-            if (trackingInitialized) return;
-            trackingInitialized = true;
-
-            const faceMesh = new FaceMesh({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-            });
-
-            faceMesh.setOptions({
-                maxNumFaces: 1,
-                refineLandmarks: true, 
-                minDetectionConfidence: 0.4, 
-                minTrackingConfidence: 0.4
-            });
-
-            faceMesh.onResults(onFaceMeshResults);
-
-            const camera = new Camera(video, {
-                onFrame: async () => {
-                    await faceMesh.send({ image: video });
-                },
-                width: 640,
-                height: 480
-            });
-            camera.start();
-
-            // 💎 【 HSV 革命性優化 - 3D 神速隔空引爆版】：註銷準星繪製，改為超靈敏物理引爆
-            // 此色彩識別矩陣專為在火球黃光偏色、亮面塑料反光下識別朱紅色物體尖端優化！
-            tracking.ColorTracker.registerColor('magic_red', function(r, g, b) {
-                return (r > 115 && (r - b) > 30 && (r - g) > 8);
-            });
-            const colorTracker = new tracking.ColorTracker(['magic_red']);
-            colorTracker.setMinDimension(3); 
-            colorTracker.on('track', function(event) {
-                if (isGameOver || !gameStarted || event.data.length === 0 || gameState !== 'playing') {
-                    // crosshair.hasTracking = false; 註銷它，我們不使用色彩準星來引爆
-                    return;
-                }
-                
-                // 3D 物理坐標映射：不論手機拉伸變形多嚴格，100% 同步 AIFaceMesh 深度網格！
-                let validTarget = event.data[0];
-                let videoRatio = 640 / 480;
-                let canvasRatio = canvas.width / canvas.height;
-                let scaleX = 1, offsetY = 0;
-
-                if (canvasRatio > videoRatio) {
-                    scaleX = canvas.width;
-                    offsetY = (canvas.height - (canvas.width / videoRatio)) / 2;
-                } else {
-                    scaleX = canvas.height * videoRatio;
-                }
-
-                // 計算藍色蓋子中心點物理坐標 (配合鏡像)
-                let rawWandX = validTarget.x + validTarget.width / 2;
-                let rawWandY = validTarget.y + validTarget.height / 2;
-                let wandCanvasX = offsetX + (1 - rawWandX / 640) * scaleX; 
-                let wandCanvasY = offsetY + (rawWandY / 480) * (canvas.height - offsetY*2); // 配合黑邊修正
-
-                // 註：這裡原本有一個舊版的鏡像坐標OffsetX計算誤差，導致直立屏手機在橫向上無法咬合。
-                // 修正它：OffsetX 應該根據視頻在畫布中的絕對位置計算。 (見 resizeCanvases 內的 offsetX)
-
-                // 終極坐標映射修正：
-                let wandX = offsetX + (1 - (rawWandX / 640)) * scaleX;
-                let wandY = offsetY + (rawWandY / 480) * (canvas.height - 2*offsetY); // 此運算需要 resize Canvases 內的變量同步修正，已優化
-                
-                // 實作： HSV 超大包絡引爆 (距離小於 fb.size * 0.95 + 100像素)，實現隔空擦邊即爆！
-                for (let i = fireballs.length - 1; i >= 0; i--) {
-                    let fb = fireballs[i];
-                    if (!fb.active) continue;
-                    
-                    let distance = Math.hypot(wandCanvasX - fb.x, wandCanvasY - fb.y);
-                    if (distance < (fb.size * 0.95 + 100)) {
-                        scoreSuccess++;
-                        document.getElementById('txt-success').innerText = scoreSuccess;
-                        createExplosion(fb.x, fb.y);
-                        fb.active = false;
-                        checkGameCompletion();
-                        break;
-                    }
-                }
-                
-                // (註銷準星繪製邏輯，不再進行幾何補間)
-            });
-            tracking.track('#webcam', colorTracker);
         }
 
         function checkGameCompletion() {
@@ -636,11 +593,11 @@
             details.innerHTML = `成功點破：<span style="color:#00d2ff; font-weight:bold;">${scoreSuccess}</span> 顆<br>防線漏接：<span style="color:#ff4500; font-weight:bold;">${scoreFailed}</span> 顆`;
             
             if (scoreSuccess >= 8) {
-                mainTxt.innerText = "特訓評價：大魔法師"; mainTxt.style.color = "#ffd700"; mainTxt.style.textShadow = "0 0 20px #ffd700";
+                mainTxt.innerText = "特訓結束：大魔法師"; mainTxt.style.color = "#ffd700"; mainTxt.style.textShadow = "0 0 20px #ffd700";
             } else if (scoreSuccess >= 5) {
-                mainTxt.innerText = "特訓評價：合格巫師"; mainTxt.style.color = "#00d2ff"; mainTxt.style.textShadow = "0 0 20px #00d2ff";
+                mainTxt.innerText = "特訓結束：合格巫師"; mainTxt.style.color = "#00d2ff"; mainTxt.style.textShadow = "0 0 20px #00d2ff";
             } else {
-                mainTxt.innerText = "特訓評價：魔法學徒"; mainTxt.style.color = "#ff3333"; mainTxt.style.textShadow = "0 0 20px #ff3333";
+                mainTxt.innerText = "特訓結束：魔法學徒"; mainTxt.style.color = "#ff3333"; mainTxt.style.textShadow = "0 0 20px #ff3333";
             }
             
             gameOverScreen.style.display = 'flex';
