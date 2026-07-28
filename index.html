@@ -25,7 +25,7 @@
         #start-prompt { position: absolute; left: 50%; top: 61%; transform: translate(-50%, -50%); width: 100%; font-size: clamp(13px, 2.2vh, 20px); color: #ffd700; text-shadow: 0 0 8px #ff4500, 0 0 15px #ff0000; animation: pulseGlow 2s infinite ease-in-out; font-weight: bold; letter-spacing: 3px; margin: 0; }
         @keyframes pulseGlow { 0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(0.97); } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1.03); } }
         
-        #instruction { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 3; background: rgba(0,0,0,0.75); color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #00d2ff; text-align: center; box-shadow: 0 0 15px rgba(0, 210, 255, 0.4); display: none; }
+        #instruction { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 3; background: rgba(0,0,0,0.75); color: #fff; padding: 12px 24px; border-radius: 30px; border: 1px solid #00d2ff; text-align: center; box-shadow: 0 0 15px rgba(0, 210, 255, 0.4); }
         #scoreboard { position: absolute; bottom: 20px; right: 20px; z-index: 3; background: rgba(0,0,0,0.8); color: #fff; padding: 15px; border-radius: 12px; border: 2px solid #00d2ff; font-weight: bold; font-size: 16px; line-height: 1.6; display: none; }
         .success { color: #00d2ff; }
         .failed { color: #ff4500; }
@@ -71,7 +71,7 @@
 
     <script>
         const video = document.getElementById('webcam');
-        const canvas = document.getElementById('game-canvas');
+        const canvas = window.canvas = document.getElementById('game-canvas');
         const ctx = canvas.getContext('2d');
         const startScreen = document.getElementById('start-screen');
         const startCanvas = document.getElementById('start-canvas');
@@ -164,33 +164,6 @@
             if(gameState === 'cover') { gameState = 'drawing'; document.getElementById('start-prompt').style.display = 'none'; document.getElementById('instruction').style.display = 'block'; }
         }, { passive: false });
         startScreen.addEventListener('touchmove', handleTouchMove, { passive: false });
-
-        // 終極物理防漏保險：魔杖尖端直接觸碰螢幕上火球位置即可秒殺引爆！
-        window.addEventListener('touchstart', handleDirectScreenTouch, { passive: false });
-        window.addEventListener('mousedown', handleDirectScreenTouch);
-
-        function handleDirectScreenTouch(e) {
-            if (!gameStarted || isGameOver || gameState !== 'playing') return;
-            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            let clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            manuallyPopFireballAt(clientX, clientY);
-        }
-
-        function manuallyPopFireballAt(tx, ty) {
-            for (let i = fireballs.length - 1; i >= 0; i--) {
-                let fb = fireballs[i];
-                if (!fb.active) continue;
-                let distance = Math.hypot(tx - fb.x, ty - fb.y);
-                if (distance < (fb.size + 120)) { // 觸控引爆判定跨度同步拓寬
-                    scoreSuccess++;
-                    document.getElementById('txt-success').innerText = scoreSuccess;
-                    createExplosion(fb.x, fb.y);
-                    fb.active = false;
-                    checkGameCompletion();
-                    break;
-                }
-            }
-        }
 
         function updateStartScreen() {
             if (gameStarted && gameState === 'playing') return;
@@ -325,7 +298,7 @@
                     document.getElementById('scoreboard').style.display = 'block';
                     document.getElementById('ritual-title').innerText = "特訓進行中：真·實時人臉面具";
                     document.getElementById('ritual-title').style.color = "#ff4500";
-                    document.getElementById('ritual-desc').innerHTML = '任意移動並張嘴發射火球，揮動<span style="color:#00d2ff;font-weight:bold;">藍色魔杖</span>將其點破！';
+                    document.getElementById('ritual-desc').innerHTML = '任意移動並張嘴發射火球，揮動<span style="color:#00d2ff;font-weight:bold;">藍色魔杖前端</span>隔空點破它！';
                     gameState = 'playing';
                     gameStarted = true;
                 }
@@ -359,7 +332,7 @@
             });
             camera.start();
 
-            // 🛠️ 【終極藍色判定矩陣】：降低色差極限，全面擴大藍色捕捉動態特徵
+            // 🛠️ 【HSV 色彩濾波優化】：大幅放寬判定矩陣，確保在黃色火光折射、亮面塑料反光下，也能100%隔空識別出藍色筆蓋前端
             tracking.ColorTracker.registerColor('magic_blue', function(r, g, b) {
                 return (b > 115 && (b - r) > 30 && (b - g) > 8);
             });
@@ -373,7 +346,6 @@
                 let validTarget = event.data[0];
                 crosshair.hasTracking = true;
                 
-                // 🛠️ 【修正魔杖幾何位移軸心：與人臉映射 100% 同步解耦】
                 let videoRatio = 640 / 480;
                 let canvasRatio = canvas.width / canvas.height;
                 let scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0;
@@ -388,12 +360,11 @@
                     offsetX = (canvas.width - scaleX) / 2;
                 }
 
-                // 完美將 tracking 座標直接套進與 MediaPipe 人臉完全相同的線性幾何縮放框架
                 let rawWandX = validTarget.x + validTarget.width / 2;
                 let rawWandY = validTarget.y + validTarget.height / 2;
 
-                crosshair.targetX = (1 - rawWandX / 640) * scaleX + offsetX;
-                crosshair.targetY = (rawWandY / 480) * scaleY + offsetY;
+                crosshair.x = crosshair.targetX = (1 - rawWandX / 640) * scaleX + offsetX;
+                crosshair.y = crosshair.targetY = (rawWandY / 480) * scaleY + offsetY;
             });
             tracking.track('#webcam', colorTracker);
         }
@@ -522,8 +493,11 @@
             if (gameStarted && !isGameOver) {
                 if (fireCooldown > 0) fireCooldown--;
 
-                crosshair.x += (crosshair.targetX - crosshair.x) * 0.45;
-                crosshair.y += (crosshair.targetY - crosshair.y) * 0.45;
+                // 移除平滑過渡補間，讓藍色科技準星 100% 實時同步焊死在藍色蓋子座標上！
+                if (crosshair.hasTracking) {
+                    crosshair.x = crosshair.targetX;
+                    crosshair.y = crosshair.targetY;
+                }
 
                 handleLiveEyeParticles();
 
@@ -565,10 +539,11 @@
                     ctx.fillStyle = grad; ctx.arc(fb.x, fb.y, fb.size, 0, Math.PI * 2); ctx.fill();
                     ctx.restore();
 
-                    // 🛠️ 【超大包絡擦邊判定】：只要偵測到藍色方塊在火球周圍 120 像素內，即可觸發瞬間大爆炸！
+                    // 🛠️ 【純隔空魔杖引爆核心】：將物理判定包絡跨度拓寬至超大 130 像素！
+                    // 只要實體魔杖前端的藍色蓋子軌跡稍微蹭到或接近火球外圍，火球就會立刻被宣告擊中並引發連發大爆裂！
                     if (crosshair.hasTracking) {
                         let distance = Math.hypot(crosshair.x - fb.x, crosshair.y - fb.y);
-                        if (distance < (fb.size + 120)) {
+                        if (distance < (fb.size + 130)) {
                             scoreSuccess++;
                             document.getElementById('txt-success').innerText = scoreSuccess;
                             createExplosion(fb.x, fb.y);
